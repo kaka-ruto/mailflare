@@ -1,9 +1,16 @@
 "use client";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { clearMailboxClientState } from "@/components/mailbox-provider-utils";
+import { NewMessagePopup } from "@/components/new-message-popup";
+import { useMessagePolling } from "@/hooks/use-message-polling";
+import { clearMessageClientState } from "@/hooks/utils";
+import { AUTH_SESSION_CHANGED_EVENT } from "@/lib/auth/client";
 
 export function Providers({ children }: { children: React.ReactNode }) {
+	const realtime = useMessagePolling();
+
 	const [client] = useState(
 		() =>
 			new QueryClient({
@@ -17,5 +24,27 @@ export function Providers({ children }: { children: React.ReactNode }) {
 				},
 			}),
 	);
-	return <QueryClientProvider client={client}>{children}</QueryClientProvider>;
+
+	useEffect(() => {
+		function resetUserScopedState() {
+			client.clear();
+			clearMailboxClientState();
+			clearMessageClientState();
+		}
+
+		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetUserScopedState);
+		return () => window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetUserScopedState);
+	}, [client]);
+
+	return (
+		<QueryClientProvider client={client}>
+			{children}
+			{realtime.notification && (
+				<NewMessagePopup
+					notification={realtime.notification}
+					onDismiss={realtime.dismissNotification}
+				/>
+			)}
+		</QueryClientProvider>
+	);
 }

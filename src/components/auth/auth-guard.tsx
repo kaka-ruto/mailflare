@@ -4,8 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { authFetch, getClientSessionToken } from "@/lib/auth/client";
 import type { AuthGuardProps } from "./auth-guard-types";
+import { PageSkeleton } from "@/components/page-skeletons";
 
-export function AuthGuard({ children, mode = "protected", requireMailbox }: AuthGuardProps) {
+export function AuthGuard({ children, mode = "protected", requireMailbox, requireRole }: AuthGuardProps) {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [authorized, setAuthorized] = useState(mode === "public");
@@ -28,7 +29,7 @@ export function AuthGuard({ children, mode = "protected", requireMailbox }: Auth
 				return;
 			}
 
-			const data = (await response.json()) as { hasMailboxes?: boolean };
+			const data = (await response.json()) as { hasMailboxes?: boolean; user?: { role?: string } };
 			if (mode === "public") {
 				router.replace(data.hasMailboxes === false ? "/onboarding" : "/inbox");
 				return;
@@ -44,6 +45,11 @@ export function AuthGuard({ children, mode = "protected", requireMailbox }: Auth
 				return;
 			}
 
+			if (requireRole && data.user?.role !== requireRole) {
+				router.replace("/inbox");
+				return;
+			}
+
 			setAuthorized(true);
 		}
 
@@ -52,8 +58,8 @@ export function AuthGuard({ children, mode = "protected", requireMailbox }: Auth
 		return () => {
 			cancelled = true;
 		};
-	}, [mode, pathname, requireMailbox, router]);
+	}, [mode, pathname, requireMailbox, requireRole, router]);
 
-	if (!authorized) return null;
+	if (!authorized) return <PageSkeleton />;
 	return <>{children}</>;
 }

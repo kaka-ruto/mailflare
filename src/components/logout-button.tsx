@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { authFetch, clearClientSessionToken } from "@/lib/auth/client";
+import { logoutClientSession } from "@/lib/auth/logout";
 
 export function LogoutButton() {
 	const router = useRouter();
@@ -11,9 +11,9 @@ export function LogoutButton() {
 			variant="outline"
 			className="w-full"
 			onClick={async () => {
-				await authFetch("/api/auth/logout", { method: "POST", redirectOnUnauthorized: false });
-				clearClientSessionToken();
-				router.push("/login");
+				await logoutClientSession();
+				router.replace("/login");
+				router.refresh();
 			}}
 		>
 			Log out

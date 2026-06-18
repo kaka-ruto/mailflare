@@ -24,7 +24,7 @@ export async function authenticateApiKey(
 	for (const candidate of candidates) {
 		if (!verifyApiKey(key, candidate.keyHash)) continue;
 		const [user] = await db.select().from(users).where(eq(users.id, candidate.userId)).limit(1);
-		if (!user) continue;
+		if (!user || user.disabled) continue;
 
 		await db
 			.update(apiKeys)

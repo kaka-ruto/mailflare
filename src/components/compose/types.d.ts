@@ -12,3 +12,8 @@ export type DraftResponse = {
 	draft?: ComposeDraft;
 	error?: string;
 };
+
+export type ComposeAttachment = {
+	id: string;
+	file: File;
+};

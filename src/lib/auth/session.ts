@@ -1,5 +1,4 @@
-import { eq, gt } from "drizzle-orm";
-import bcrypt from "bcryptjs";
+import { and, eq, gt } from "drizzle-orm";
 import { newId } from "@/lib/ids";
 import { getDb } from "@/db";
 import { sessions, users } from "@/db/schema";
@@ -11,18 +10,17 @@ export function generateSessionToken(): string {
 	return newId("sess");
 }
 
-export function hashSessionToken(token: string): string {
-	return bcrypt.hashSync(token, 10);
-}
-
-export function verifySessionToken(token: string, hash: string): boolean {
-	return bcrypt.compareSync(token, hash);
+export async function hashSessionToken(token: string): Promise<string> {
+	const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+	return Array.from(new Uint8Array(digest))
+		.map((byte) => byte.toString(16).padStart(2, "0"))
+		.join("");
 }
 
 export async function createSession(env: CloudflareEnv, userId: string): Promise<string> {
 	const db = getDb(env);
 	const token = generateSessionToken();
-	const tokenHash = hashSessionToken(token);
+	const tokenHash = await hashSessionToken(token);
 	const expiresAt = new Date();
 	expiresAt.setDate(expiresAt.getDate() + SESSION_DAYS);
 
@@ -42,22 +40,19 @@ export async function getUserFromSession(
 ): Promise<typeof users.$inferSelect | null> {
 	if (!token) return null;
 	const db = getDb(env);
-	const rows = await db.select().from(sessions).where(gt(sessions.expiresAt, new Date()));
-	for (const row of rows) {
-		if (verifySessionToken(token, row.tokenHash)) {
-			const [user] = await db.select().from(users).where(eq(users.id, row.userId)).limit(1);
-			return user ?? null;
-		}
-	}
-	return null;
+	const tokenHash = await hashSessionToken(token);
+	const [session] = await db
+		.select()
+		.from(sessions)
+		.where(and(eq(sessions.tokenHash, tokenHash), gt(sessions.expiresAt, new Date())))
+		.limit(1);
+	if (!session) return null;
+	const [user] = await db.select().from(users).where(eq(users.id, session.userId)).limit(1);
+	return user ?? null;
 }
 
 export async function deleteSession(env: CloudflareEnv, token: string): Promise<void> {
 	const db = getDb(env);
-	const rows = await db.select().from(sessions).where(gt(sessions.expiresAt, new Date()));
-	for (const row of rows) {
-		if (verifySessionToken(token, row.tokenHash)) {
-			await db.delete(sessions).where(eq(sessions.id, row.id));
-		}
-	}
+	const tokenHash = await hashSessionToken(token);
+	await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash));
 }

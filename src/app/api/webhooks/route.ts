@@ -6,6 +6,8 @@ import { webhooks } from "@/db/schema";
 import { requireUser } from "@/lib/auth/cookies";
 import { newId } from "@/lib/ids";
 import { webhookSchema } from "@/lib/validators";
+import { readJsonBody } from "@/lib/http/request";
+import { RequestBodyTooLargeError } from "@/lib/http/errors";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -20,7 +22,14 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 	const env = getEnv();
 	const user = await requireUser(env, request);
-	const parsed = webhookSchema.safeParse(await request.json());
+	let body: unknown;
+	try {
+		body = await readJsonBody(request, 16 * 1024);
+	} catch (error) {
+		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
+		return NextResponse.json({ error: "Invalid webhook request" }, { status });
+	}
+	const parsed = webhookSchema.safeParse(body);
 	if (!parsed.success) {
 		return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
 	}

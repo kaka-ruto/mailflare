@@ -7,30 +7,14 @@ import { requireUser } from "@/lib/auth/cookies";
 import { newId } from "@/lib/ids";
 import { mailboxSchema } from "@/lib/validators";
 import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
+import { listAccessibleMailboxes } from "@/lib/mailboxes/access";
 
 export async function GET(request: Request) {
 	const env = getEnv();
 	const user = await requireUser(env, request);
 	const db = getDb(env);
-	const rows = await db
-		.select({
-			id: mailboxes.id,
-			userId: mailboxes.userId,
-			domainId: mailboxes.domainId,
-			localPart: mailboxes.localPart,
-			displayName: mailboxes.displayName,
-			createdAt: mailboxes.createdAt,
-			hostname: domains.hostname,
-		})
-		.from(mailboxes)
-		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-		.where(eq(mailboxes.userId, user.id));
-	return NextResponse.json({
-		mailboxes: rows.map((row) => ({
-			...row,
-			isPrimary: `${row.localPart}@${row.hostname}` === user.email,
-		})),
-	});
+	const rows = await listAccessibleMailboxes(db, user);
+	return NextResponse.json({ mailboxes: rows });
 }
 
 export async function POST(request: Request) {
@@ -42,6 +26,7 @@ export async function POST(request: Request) {
 	}
 
 	const db = getDb(env);
+	const mailboxType = "personal";
 	const [domain] = await db
 		.select()
 		.from(domains)
@@ -76,10 +61,12 @@ export async function POST(request: Request) {
 		domainId: parsed.data.domainId,
 		localPart,
 		displayName: parsed.data.displayName,
+		type: mailboxType,
 	});
 
 	return NextResponse.json({
 		id,
 		address,
+		type: mailboxType,
 	});
 }

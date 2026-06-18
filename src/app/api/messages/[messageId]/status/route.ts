@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
-import { updateMessageStatus } from "@/lib/user";
+import { updateMessageStatusForUser } from "@/lib/user";
 import type { MessageStatusPayload } from "./types";
 import { isAllowedMessageStatus } from "./utils";
 
@@ -21,7 +21,7 @@ export async function POST(
 		return NextResponse.json({ error: "Invalid message status" }, { status: 400 });
 	}
 
-	const success = await updateMessageStatus(env, user.id, messageId, payload.status);
+	const success = await updateMessageStatusForUser(env, user, messageId, payload.status);
 	if (!success) {
 		return NextResponse.json({ error: "Message not found" }, { status: 404 });
 	}

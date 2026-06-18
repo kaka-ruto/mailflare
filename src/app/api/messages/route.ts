@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { eq, desc, and, like, or, count } from "drizzle-orm";
+import { eq, desc, and, like, or, count, isNull, inArray } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getDb } from "@/db";
@@ -7,6 +8,7 @@ import { messages } from "@/db/schema";
 import { getContactDisplayNameMap } from "@/lib/contacts/service";
 import { normalizeEmailAddress } from "@/lib/email/address";
 import { getLatestEmailContent } from "@/lib/email/reply-content-utils";
+import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -18,6 +20,7 @@ export async function GET(request: Request) {
 	const url = new URL(request.url);
 	const direction = url.searchParams.get("direction");
 	const mailboxId = url.searchParams.get("mailboxId");
+	const folderId = url.searchParams.get("folderId");
 	const status = url.searchParams.get("status");
 	const query = url.searchParams.get("q")?.trim();
 	const title = url.searchParams.get("title")?.trim();
@@ -26,15 +29,30 @@ export async function GET(request: Request) {
 	const offset = Math.max(Number(url.searchParams.get("offset") ?? 0), 0);
 
 	const db = getDb(env);
-	const conditions = [eq(messages.userId, user.id)];
+	const accessibleMailboxIds = await listAccessibleMailboxIds(db, user);
+	const conditions: SQL[] = [];
+	if (mailboxId) {
+		const access = await getMailboxAccessLevel(db, user, mailboxId);
+		if (!access?.canRead) {
+			return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
+		}
+		conditions.push(eq(messages.mailboxId, mailboxId));
+	} else if (accessibleMailboxIds.length > 0) {
+		conditions.push(inArray(messages.mailboxId, accessibleMailboxIds));
+	} else {
+		conditions.push(eq(messages.userId, user.id));
+	}
 	if (direction === "inbound" || direction === "outbound") {
 		conditions.push(eq(messages.direction, direction));
 	}
-	if (mailboxId) {
-		conditions.push(eq(messages.mailboxId, mailboxId));
+	if (folderId) {
+		conditions.push(eq(messages.folderId, folderId));
 	}
 	if (status) {
 		conditions.push(eq(messages.status, status));
+	}
+	if (status === "received" && !folderId) {
+		conditions.push(isNull(messages.folderId));
 	}
 	if (read === "read") {
 		conditions.push(eq(messages.read, true));

@@ -4,6 +4,7 @@ import { getDb } from "@/db";
 import { mailboxes } from "@/db/schema";
 import { requireUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
 import { updateMailboxSchema } from "@/lib/validators";
 import type { MailboxRouteParams } from "./types";
 import { getMailboxUpdateValues, selectMailboxForUser } from "./utils";
@@ -13,6 +14,10 @@ export async function GET(request: Request, { params }: MailboxRouteParams) {
 	const env = getEnv();
 	const user = await requireUser(env, request);
 	const db = getDb(env);
+	const access = await getMailboxAccessLevel(db, user, id);
+	if (!access?.canRead) {
+		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
+	}
 	const [mailbox] = await selectMailboxForUser(db, user.id, id);
 
 	if (!mailbox) {
@@ -22,6 +27,7 @@ export async function GET(request: Request, { params }: MailboxRouteParams) {
 	return NextResponse.json({
 		mailbox: {
 			...mailbox,
+			permission: access.permission,
 			isPrimary: `${mailbox.localPart}@${mailbox.hostname}` === user.email,
 		},
 	});
@@ -38,9 +44,10 @@ export async function PATCH(request: Request, { params }: MailboxRouteParams) {
 	}
 
 	const db = getDb(env);
+	const access = await getMailboxAccessLevel(db, user, id);
 	const [existing] = await selectMailboxForUser(db, user.id, id);
 
-	if (!existing) {
+	if (!existing || !access?.canManage) {
 		return NextResponse.json({ error: "Mailbox not found" }, { status: 404 });
 	}
 
@@ -57,6 +64,7 @@ export async function PATCH(request: Request, { params }: MailboxRouteParams) {
 	return NextResponse.json({
 		mailbox: {
 			...mailbox,
+			permission: access.permission,
 			isPrimary: `${mailbox!.localPart}@${mailbox!.hostname}` === user.email,
 		},
 	});

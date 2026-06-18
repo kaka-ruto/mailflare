@@ -9,13 +9,18 @@ import type { BulkMessageToolbarProps } from "./types";
 export function BulkMessageToolbar({
 	selectedCount,
 	hasUnreadSelection,
+	hideSelectedCount = false,
 	onAction,
 	onClearSelection,
 	pending,
 }: BulkMessageToolbarProps) {
 	return (
 		<div className="flex min-w-0 items-center gap-2 text-neutral-600 w-full">
-			<span className="mr-2 text-sm font-medium text-neutral-800">{selectedCount} selected</span>
+			{!hideSelectedCount && (
+				<span className="mr-2 text-sm font-medium text-neutral-800">
+					{selectedCount} selected
+				</span>
+			)}
 			<Tooltip label="Archive">
 				<Button variant="ghost" size="sm" onClick={() => onAction("archive")} disabled={pending} aria-label="Archive">
 					<Archive className="h-4 w-4" />
@@ -42,6 +47,7 @@ export function BulkMessageToolbar({
 					{hasUnreadSelection ? <MailOpen className="h-4 w-4" /> : <Mail className="h-4 w-4" />}
 				</Button>
 			</Tooltip>
+			<span className="flex-1" />
 			<Tooltip label="Move selected messages">
 				<span className="rounded-lg border border-neutral-200 px-2">
 					<select
@@ -56,12 +62,12 @@ export function BulkMessageToolbar({
 						}}
 					>
 						<option value="">Move to</option>
+						<option value="archive">Archived</option>
 						<option value="spam">Spam</option>
 						<option value="trash">Trash</option>
 					</select>
 				</span>
 			</Tooltip>
-			<span className="flex-1" />
 			<Tooltip label="Clear selection">
 				<Button variant="ghost" size="sm" onClick={onClearSelection} disabled={pending} aria-label="Clear selection">
 					<X className="h-4 w-4" />

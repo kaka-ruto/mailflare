@@ -1,12 +1,18 @@
 import { useEffect, useState } from "react";
 import type { Message, MessageFilterOptions, MessageFolder } from "./types";
-import { clearMessageCountsCache, clearMessageListCache, fetchMessageList, getMessageQueryParams } from "./utils";
+import {
+	clearMessageCountsCache,
+	clearMessageListCache,
+	fetchMessageList,
+	getMessageQueryParams,
+} from "./utils";
 
 export function useMessages(
 	folder: MessageFolder,
 	mailboxId?: string | null,
 	filters?: MessageFilterOptions,
 	enabled = true,
+	folderId?: string | null,
 ) {
 	const [messages, setMessages] = useState<Message[]>([]);
 	const [isLoading, setIsLoading] = useState(true);
@@ -22,7 +28,7 @@ export function useMessages(
 		async function loadMessages(force = false) {
 			setIsLoading(true);
 			try {
-				const params = getMessageQueryParams(folder, mailboxId, filters);
+				const params = getMessageQueryParams(folder, mailboxId, filters, folderId);
 				const data = await fetchMessageList(params, force);
 				if (!cancelled) {
 					setMessages(data.messages ?? []);
@@ -47,7 +53,7 @@ export function useMessages(
 			cancelled = true;
 			window.removeEventListener("mailflare:messages-changed", onMessagesChanged);
 		};
-	}, [enabled, filters?.limit, filters?.offset, filters?.query, filters?.read, filters?.title, folder, mailboxId]);
+	}, [enabled, filters?.limit, filters?.offset, filters?.query, filters?.read, filters?.title, folder, folderId, mailboxId]);
 
 	return { messages, unreadCount, isLoading, total, limit, offset };
 }

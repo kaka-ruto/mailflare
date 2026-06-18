@@ -1,5 +1,14 @@
 import { persistAuthSession } from "@/lib/auth/client";
-import type { LoginResult } from "./types";
+import type { LoginResult, RegistrationStatus } from "./types";
+
+export async function getRegistrationStatus(): Promise<RegistrationStatus> {
+	const response = await fetch("/api/setup/status", { cache: "no-store" });
+	if (!response.ok) {
+		throw new Error("Could not load registration status");
+	}
+
+	return (await response.json()) as RegistrationStatus;
+}
 
 export async function submitLogin(form: FormData): Promise<{ ok: boolean; data: LoginResult }> {
 	const res = await fetch("/api/auth/login", {
@@ -8,6 +17,7 @@ export async function submitLogin(form: FormData): Promise<{ ok: boolean; data: 
 		body: JSON.stringify({
 			email: form.get("email"),
 			password: form.get("password"),
+			turnstileToken: form.get("turnstileToken"),
 		}),
 	});
 

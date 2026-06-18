@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { AdminNav } from "@/components/admin-nav";
 import { DashboardNav } from "@/components/dashboard-nav";
 
-const adminPrefixes = ["/admin", "/mailboxes", "/domains", "/routing", "/api-keys", "/webhooks"];
+const adminPrefixes = ["/admin", "/mailboxes", "/domains", "/api-keys", "/activity", "/audit-logs", "/webhooks"];
 
 export function DashboardShellNav() {
 	const pathname = usePathname();

@@ -1,6 +1,6 @@
-export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "trash" | "spam";
+export type MessageStatus = "received" | "sent" | "draft" | "queued" | "failed" | "archived" | "trash" | "spam";
 
-export type MessageFolder = "inbox" | "sent" | "drafts" | "trash" | "spam";
+export type MessageFolder = "inbox" | "sent" | "drafts" | "archived" | "trash" | "spam";
 
 export type MessageDirection = "inbound" | "outbound";
 
@@ -8,6 +8,7 @@ export type Message = {
 	id: string;
 	userId: string;
 	mailboxId: string | null;
+	folderId: string | null;
 	direction: MessageDirection;
 	providerMessageId: string | null;
 	fromAddr: string;
@@ -53,5 +54,6 @@ export type MailboxCount = {
 
 export type MessageCounts = {
 	folders: Record<MessageFolder, FolderCount>;
+	customFolders: Record<string, FolderCount>;
 	mailboxes: MailboxCount[];
 };

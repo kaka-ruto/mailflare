@@ -16,7 +16,12 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fetchMailbox, getMailboxAddress, updateMailboxName } from "./utils";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+	fetchMailbox,
+	getMailboxAddress,
+	updateMailboxName,
+} from "./utils";
 
 export default function MailboxSettingsPage() {
 	const params = useParams<{ id: string }>();
@@ -60,11 +65,18 @@ export default function MailboxSettingsPage() {
 					<h1 className="truncate text-2xl font-semibold text-neutral-900">
 						{mailbox.data?.displayName || mailbox.data?.localPart || "Mailbox"}
 					</h1>
-					<p className="mt-1 truncate font-mono text-sm text-neutral-500">
-						{address || "Loading mailbox..."}
-					</p>
+					{address ? (
+						<p className="mt-1 truncate no-font-mono text-sm text-neutral-500">
+							{address}
+						</p>
+					) : (
+						<Skeleton className="mt-2 h-4 w-52" />
+					)}
 				</div>
-				{mailbox.data?.isPrimary && <Badge variant="secondary">Primary</Badge>}
+				<div className="flex shrink-0 items-center gap-2">
+					{mailbox.data?.type === "shared" && <Badge variant="secondary">Shared</Badge>}
+					{mailbox.data?.isPrimary && <Badge variant="secondary">Primary</Badge>}
+				</div>
 			</div>
 
 			{mailbox.isError && (
@@ -121,17 +133,17 @@ export default function MailboxSettingsPage() {
 				<CardContent className="grid gap-4 sm:grid-cols-2">
 					<div className="space-y-1">
 						<p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Email</p>
-						<p className="truncate font-mono text-sm text-neutral-900">{address || "-"}</p>
+						<p className="truncate no-font-mono text-sm text-neutral-900">{address || "-"}</p>
 					</div>
 					<div className="space-y-1">
 						<p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Username</p>
-						<p className="truncate font-mono text-sm text-neutral-900">
+						<p className="truncate no-font-mono text-sm text-neutral-900">
 							{mailbox.data?.localPart ?? "-"}
 						</p>
 					</div>
 					<div className="space-y-1">
 						<p className="text-xs font-medium uppercase tracking-wide text-neutral-500">Domain</p>
-						<p className="truncate font-mono text-sm text-neutral-900">
+						<p className="truncate no-font-mono text-sm text-neutral-900">
 							{mailbox.data?.hostname ?? "-"}
 						</p>
 					</div>

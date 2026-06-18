@@ -6,15 +6,10 @@ import { messageBodies, messages } from "@/db/schema";
 import { requireUser } from "@/lib/auth/cookies";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
-
-type DraftPayload = {
-	mailboxId?: string | null;
-	from?: string;
-	to?: string;
-	subject?: string;
-	text?: string;
-	html?: string;
-};
+import { readJsonBody } from "@/lib/http/request";
+import { RequestBodyTooLargeError } from "@/lib/http/errors";
+import type { DraftPayload } from "./types";
+import { getDraftSender } from "./utils";
 
 export async function GET(request: Request) {
 	const env = getEnv();
@@ -42,8 +37,18 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
 	const env = getEnv();
 	const user = await requireUser(env, request);
-	const input = (await request.json()) as DraftPayload;
+	let input: DraftPayload;
+	try {
+		input = await readJsonBody<DraftPayload>(request, 1024 * 1024);
+	} catch (error) {
+		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
+		return NextResponse.json({ error: "Invalid draft request" }, { status });
+	}
 	const db = getDb(env);
+	const sender = await getDraftSender(env, user.id, input);
+	if ("error" in sender) {
+		return NextResponse.json({ error: sender.error }, { status: 403 });
+	}
 	const draftId = newId("msg");
 	const text = input.text ?? "";
 	const html = input.html ?? "";
@@ -51,9 +56,9 @@ export async function POST(request: Request) {
 	await db.insert(messages).values({
 		id: draftId,
 		userId: user.id,
-		mailboxId: input.mailboxId ?? null,
+		mailboxId: sender.mailboxId,
 		direction: "outbound",
-		fromAddr: input.from ?? "",
+		fromAddr: sender.fromAddr,
 		toAddr: input.to ?? "",
 		subject: input.subject ?? null,
 		snippet: buildSnippet(text || null, html || null),

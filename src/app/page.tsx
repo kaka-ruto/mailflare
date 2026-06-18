@@ -37,7 +37,7 @@ export default function HomePage() {
           className="flex items-center gap-3"
           aria-label="Email Platform home"
         >
-          <img src="/icon-96.png" height={28} width={28} />
+          <img src="/icon-96.png" height={32} width={32} />
           <span className="text-base font-semibold tracking-tight">
             Mailflare
           </span>
@@ -72,8 +72,7 @@ export default function HomePage() {
             </h1>
             <p className="mt-6 max-w-xl text-lg leading-8 text-neutral-600">
               Add domains, route inbound mail, send through API keys, and manage
-              team mailboxes from one quiet workspace built around the message
-              list.
+              your mailboxes from one quiet workspace built around the message list.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Button size="lg" asChild className="rounded-full px-6">
@@ -199,7 +198,7 @@ export default function HomePage() {
 						<div className="grid gap-4 sm:grid-cols-3">
 							{inboxStats.map((stat) => (
 								<div key={stat.label} className="border-t border-neutral-200 pt-4">
-									<p className="font-mono text-2xl font-semibold text-neutral-950">{stat.value}</p>
+									<p className="no-font-mono text-2xl font-semibold text-neutral-950">{stat.value}</p>
 									<p className="mt-1 text-sm text-neutral-500">{stat.label}</p>
 								</div>
 							))}

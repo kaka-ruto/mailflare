@@ -10,11 +10,15 @@ function getBearerToken(request?: Request): string | undefined {
 
 export async function getCurrentUser(env: CloudflareEnv, request?: Request) {
 	const bearerToken = getBearerToken(request);
-	if (bearerToken) return getUserFromSession(env, bearerToken);
+	if (bearerToken) {
+		const user = await getUserFromSession(env, bearerToken);
+		return user?.disabled ? null : user;
+	}
 
 	const jar = await cookies();
 	const token = jar.get(SESSION_COOKIE)?.value;
-	return getUserFromSession(env, token);
+	const user = await getUserFromSession(env, token);
+	return user?.disabled ? null : user;
 }
 
 export async function requireUser(env: CloudflareEnv, request?: Request) {

@@ -68,7 +68,7 @@ export default function WebhooksPage() {
 				<CardHeader>
 					<CardTitle>Endpoints</CardTitle>
 				</CardHeader>
-				<CardContent className="text-sm font-mono space-y-1">
+				<CardContent className="text-sm no-font-mono space-y-1">
 					{(data?.webhooks ?? []).map((w) => (
 						<p key={w.id} className="truncate">
 							{w.url}

@@ -7,6 +7,7 @@ const allowedBulkActions = new Set<BulkMessageAction>([
 	"read",
 	"unread",
 	"inbox",
+	"folder",
 ]);
 
 export function isAllowedBulkMessageAction(action: unknown): action is BulkMessageAction {
@@ -18,6 +19,7 @@ export function getStatusForBulkAction(action: BulkMessageAction): string | null
 	if (action === "trash") return "trash";
 	if (action === "spam") return "spam";
 	if (action === "inbox") return "received";
+	if (action === "folder") return "received";
 	return null;
 }
 

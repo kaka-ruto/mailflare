@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CardGridSkeleton } from "@/components/page-skeletons";
 import { authFetch } from "@/lib/auth/client";
 import type { Domain, Mailbox } from "./types";
 import { getMailboxAddress, getMailboxName } from "./utils";
@@ -77,7 +78,7 @@ export default function MailboxesPage() {
 					<DialogContent>
 						<DialogHeader>
 							<DialogTitle>Create mailbox</DialogTitle>
-							<DialogDescription>Add a mailbox and provision its routing rule automatically.</DialogDescription>
+							<DialogDescription>Add an address and provision its routing rule automatically.</DialogDescription>
 						</DialogHeader>
 						<div className="space-y-4">
 							<div className="space-y-2">
@@ -128,9 +129,7 @@ export default function MailboxesPage() {
 					</span>
 				</div> */}
 				{mailboxes.isLoading && (
-					<p className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500">
-						Loading mailboxes...
-					</p>
+					<CardGridSkeleton />
 				)}
 				{!mailboxes.isLoading && (mailboxes.data?.mailboxes ?? []).length === 0 && (
 					<p className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500">
@@ -154,10 +153,18 @@ export default function MailboxesPage() {
 									<Mail className="h-5 w-5" />
 								</span>
 								<span className="min-w-0 space-y-1">
-									<span className="block truncate text-sm font-semibold text-neutral-900">
-										{getMailboxName(mailboxWithHostname)}
+									<span className="flex min-w-0 items-center gap-2">
+										<span className="block truncate text-sm font-semibold text-neutral-900">
+											{getMailboxName(mailboxWithHostname)}
+										</span>
+										{/* {mailbox.type === "shared" && (
+											<span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+												<UsersRound className="h-3 w-3" />
+												Shared
+											</span>
+										)} */}
 									</span>
-									<span className="block truncate font-mono text-sm text-neutral-500">
+									<span className="block truncate no-font-mono text-sm text-neutral-500">
 										{getMailboxAddress(mailboxWithHostname)}
 									</span>
 								</span>

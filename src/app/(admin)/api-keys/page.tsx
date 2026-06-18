@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { CardGridSkeleton } from "@/components/page-skeletons";
 import { authFetch } from "@/lib/auth/client";
 import type { ApiKey } from "./types";
 import { parseApiKeyScopes } from "./utils";
@@ -96,9 +97,7 @@ export default function ApiKeysPage() {
 					<span className="text-sm text-neutral-500">{(data?.apiKeys ?? []).length} total</span>
 				</div>
 				{isLoading && (
-					<p className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500">
-						Loading API keys...
-					</p>
+					<CardGridSkeleton />
 				)}
 				{!isLoading && (data?.apiKeys ?? []).length === 0 && (
 					<p className="rounded-lg border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-500">
@@ -116,7 +115,7 @@ export default function ApiKeysPage() {
 							</span>
 							<span className="min-w-0 flex-1 space-y-2">
 								<span className="block truncate text-sm font-semibold text-neutral-900">{key.name}</span>
-								<span className="block truncate font-mono text-sm text-neutral-500">{key.prefix}...</span>
+								<span className="block truncate no-font-mono text-sm text-neutral-500">{key.prefix}...</span>
 								<span className="flex flex-wrap gap-1">
 									{parseApiKeyScopes(key.scopes).map((scope) => (
 										<Badge key={scope} variant="outline">

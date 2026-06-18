@@ -8,13 +8,22 @@ import {
 	useState,
 } from "react";
 import type { ReactNode } from "react";
-import { fetchMailboxOptions } from "./mailbox-provider-utils";
+import {
+	fetchMailboxOptions,
+	SELECTED_MAILBOX_STORAGE_KEY,
+} from "./mailbox-provider-utils";
+import {
+	AUTH_SESSION_CHANGED_EVENT,
+	getClientSessionToken,
+} from "@/lib/auth/client";
 
 export type MailboxOption = {
 	id: string;
 	localPart: string;
 	hostname: string;
 	displayName: string | null;
+	type?: "personal" | "shared";
+	permission?: "read_only" | "send_as" | "send_on_behalf" | "full_access";
 	isPrimary?: boolean;
 };
 
@@ -33,8 +42,6 @@ export function useSelectedMailbox() {
 	return ctx;
 }
 
-const STORAGE_KEY = "selected-mailbox-id";
-
 export function MailboxProvider({ children }: { children: ReactNode }) {
 	const [mailboxes, setMailboxes] = useState<MailboxOption[]>([]);
 	const [selectedMailbox, setSelectedMailboxState] = useState<MailboxOption | null>(null);
@@ -42,13 +49,14 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		let cancelled = false;
+		const sessionToken = getClientSessionToken();
 
 		fetchMailboxOptions()
 			.then((items) => {
-				if (cancelled) return;
+				if (cancelled || sessionToken !== getClientSessionToken()) return;
 				setMailboxes(items);
 
-				const storedId = localStorage.getItem(STORAGE_KEY);
+				const storedId = localStorage.getItem(SELECTED_MAILBOX_STORAGE_KEY);
 				if (storedId) {
 					const found = items.find((mb) => mb.id === storedId);
 					if (found) {
@@ -60,12 +68,12 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 				const primary = items.find((mb) => mb.isPrimary) ?? items[0] ?? null;
 				if (primary) {
 					setSelectedMailboxState(primary);
-					localStorage.setItem(STORAGE_KEY, primary.id);
+					localStorage.setItem(SELECTED_MAILBOX_STORAGE_KEY, primary.id);
 				}
 			})
 			.catch(() => {})
 			.finally(() => {
-				if (!cancelled) setIsLoading(false);
+				if (!cancelled && sessionToken === getClientSessionToken()) setIsLoading(false);
 			});
 
 		return () => {
@@ -73,13 +81,24 @@ export function MailboxProvider({ children }: { children: ReactNode }) {
 		};
 	}, []);
 
+	useEffect(() => {
+		function resetMailboxState() {
+			setMailboxes([]);
+			setSelectedMailboxState(null);
+			setIsLoading(true);
+		}
+
+		window.addEventListener(AUTH_SESSION_CHANGED_EVENT, resetMailboxState);
+		return () => window.removeEventListener(AUTH_SESSION_CHANGED_EVENT, resetMailboxState);
+	}, []);
+
 	const setSelectedMailbox = useCallback((mb: MailboxOption | null) => {
-		setSelectedMailboxState(mb);
+		setSelectedMailboxState((current) => (current?.id === mb?.id ? current : mb));
 		if (mb) {
-			setMailboxes((items) => items.map((item) => (item.id === mb.id ? mb : item)));
-			localStorage.setItem(STORAGE_KEY, mb.id);
+			setMailboxes((items) => items.map((item) => (item.id === mb.id && item !== mb ? mb : item)));
+			localStorage.setItem(SELECTED_MAILBOX_STORAGE_KEY, mb.id);
 		} else {
-			localStorage.removeItem(STORAGE_KEY);
+			localStorage.removeItem(SELECTED_MAILBOX_STORAGE_KEY);
 		}
 	}, []);
 

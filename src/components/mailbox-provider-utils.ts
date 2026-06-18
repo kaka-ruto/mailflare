@@ -3,16 +3,27 @@ import type { MailboxOption } from "./mailbox-provider";
 
 let mailboxesCache: MailboxOption[] | null = null;
 let mailboxesRequest: Promise<MailboxOption[]> | null = null;
+let cacheGeneration = 0;
+export const SELECTED_MAILBOX_STORAGE_KEY = "selected-mailbox-id";
 
 export function clearMailboxesCache() {
+	cacheGeneration += 1;
 	mailboxesCache = null;
 	mailboxesRequest = null;
+}
+
+export function clearMailboxClientState() {
+	clearMailboxesCache();
+	if (typeof window !== "undefined") {
+		localStorage.removeItem(SELECTED_MAILBOX_STORAGE_KEY);
+	}
 }
 
 export async function fetchMailboxOptions(force = false): Promise<MailboxOption[]> {
 	if (!force && mailboxesCache) return mailboxesCache;
 	if (!force && mailboxesRequest) return mailboxesRequest;
 
+	const requestGeneration = cacheGeneration;
 	mailboxesRequest = authFetch("/api/mailboxes")
 		.then((res) => res.json())
 		.then((data) => {
@@ -21,13 +32,15 @@ export async function fetchMailboxOptions(force = false): Promise<MailboxOption[
 				localPart: m.localPart,
 				hostname: m.hostname,
 				displayName: m.displayName,
+				type: m.type,
+				permission: m.permission,
 				isPrimary: m.isPrimary,
 			}));
-			mailboxesCache = items;
+			if (requestGeneration === cacheGeneration) mailboxesCache = items;
 			return items;
 		})
 		.finally(() => {
-			mailboxesRequest = null;
+			if (requestGeneration === cacheGeneration) mailboxesRequest = null;
 		});
 
 	return mailboxesRequest;

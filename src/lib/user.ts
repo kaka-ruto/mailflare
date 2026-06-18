@@ -1,6 +1,9 @@
 import { eq, desc, and } from "drizzle-orm";
 import { getDb } from "@/db";
 import { messages, domains, mailboxes } from "@/db/schema";
+import { getMailboxAccessLevel, listAccessibleMailboxIds } from "@/lib/mailboxes/access";
+import { createAuditLog } from "@/lib/mailboxes/audit";
+import type { SessionUser } from "@/lib/auth/types";
 
 export async function listMessagesForUser(
 	env: CloudflareEnv,
@@ -28,8 +31,14 @@ export async function listMailboxesForUser(env: CloudflareEnv, userId: string) {
 
 export async function userHasMailboxes(env: CloudflareEnv, userId: string): Promise<boolean> {
 	const db = getDb(env);
-	const [row] = await db.select({ id: mailboxes.id }).from(mailboxes).where(eq(mailboxes.userId, userId)).limit(1);
+	const [row] = await db.select({ id: mailboxes.id }).from(mailboxes).where(and(eq(mailboxes.userId, userId), eq(mailboxes.disabled, false))).limit(1);
 	return !!row;
+}
+
+export async function userHasAccessibleMailboxes(env: CloudflareEnv, user: SessionUser): Promise<boolean> {
+	const db = getDb(env);
+	const ids = await listAccessibleMailboxIds(db, user);
+	return ids.length > 0;
 }
 
 export async function hasPrimaryDomain(env: CloudflareEnv): Promise<boolean> {
@@ -66,6 +75,44 @@ export async function markMessageAsRead(env: CloudflareEnv, userId: string, mess
 		.update(messages)
 		.set({ read: true })
 		.where(eq(messages.id, messageId));
+	return true;
+}
+
+export async function markMessageAsReadForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
+	const db = getDb(env);
+	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!message?.mailboxId) return false;
+	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	if (!access?.canRead) return false;
+	await db.update(messages).set({ read: true }).where(eq(messages.id, messageId));
+	await createAuditLog(env, {
+		actorUserId: user.id,
+		mailboxId: message.mailboxId,
+		messageId,
+		action: "email.read",
+	});
+	return true;
+}
+
+export async function updateMessageStatusForUser(
+	env: CloudflareEnv,
+	user: SessionUser,
+	messageId: string,
+	status: string,
+) {
+	const db = getDb(env);
+	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!message?.mailboxId) return false;
+	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	if (!access?.canManage) return false;
+	await db.update(messages).set({ status }).where(eq(messages.id, messageId));
+	await createAuditLog(env, {
+		actorUserId: user.id,
+		mailboxId: message.mailboxId,
+		messageId,
+		action: "email.delete",
+		metadata: { status },
+	});
 	return true;
 }
 

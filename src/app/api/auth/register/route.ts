@@ -1,42 +1,45 @@
 import { NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getEnv } from "@/lib/cloudflare";
 import { getDb } from "@/db";
 import { mailboxes, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
+import { hasAdminAccount } from "@/lib/auth/setup";
 import { createSession, SESSION_COOKIE } from "@/lib/auth/session";
 import { newId } from "@/lib/ids";
-import { firstRunRegisterSchema, primaryDomainRegisterSchema } from "@/lib/validators";
+import { firstRunRegisterSchema } from "@/lib/validators";
 import { addDomainForUser } from "@/lib/domains/service";
 import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
-import { getPrimaryDomain } from "@/lib/user";
+import { readJsonBody } from "@/lib/http/request";
+import { RequestBodyTooLargeError } from "@/lib/http/errors";
+import { verifyTurnstileToken } from "@/lib/auth/turnstile";
 
 export async function POST(request: Request) {
 	const env = getEnv();
-	const body = await request.json();
 	const db = getDb(env);
-	const primaryDomain = await getPrimaryDomain(env);
-	const primaryDomainExists = !!primaryDomain;
-	const isFirstRun = !primaryDomainExists;
-	const firstRunParsed = isFirstRun ? firstRunRegisterSchema.safeParse(body) : null;
-	const registerParsed = isFirstRun ? null : primaryDomainRegisterSchema.safeParse(body);
+	if (await hasAdminAccount(env)) {
+		return NextResponse.json({ error: "Registration is closed after the first account is created" }, { status: 403 });
+	}
 
-	if (firstRunParsed && !firstRunParsed.success) {
+	let body: unknown;
+	try {
+		body = await readJsonBody(request, 16 * 1024);
+	} catch (error) {
+		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
+		return NextResponse.json({ error: "Invalid registration request" }, { status });
+	}
+	const firstRunParsed = firstRunRegisterSchema.safeParse(body);
+	if (!firstRunParsed.success) {
 		return NextResponse.json({ error: firstRunParsed.error.flatten() }, { status: 400 });
 	}
-
-	if (registerParsed && !registerParsed.success) {
-		return NextResponse.json({ error: registerParsed.error.flatten() }, { status: 400 });
+	if (!(await verifyTurnstileToken(env, request, (body as Record<string, unknown>).turnstileToken))) {
+		return NextResponse.json({ error: "Verification failed. Please try again." }, { status: 400 });
 	}
 
-	const domainName = firstRunParsed?.success ? firstRunParsed.data.domain.toLowerCase().trim() : null;
-	const username = (firstRunParsed?.success ? firstRunParsed.data.username : registerParsed!.data.username)
-		.toLowerCase()
-		.trim();
-	const email = firstRunParsed?.success
-		? `${username}@${domainName}`
-		: `${username}@${primaryDomain!.hostname}`;
-	const password = firstRunParsed?.success ? firstRunParsed.data.password : registerParsed!.data.password;
+	const domainName = firstRunParsed.data.domain.toLowerCase().trim();
+	const username = firstRunParsed.data.username.toLowerCase().trim();
+	const email = `${username}@${domainName}`;
+	const password = firstRunParsed.data.password;
 	const name = username;
 
 	const [existing] = await db.select().from(users).where(eq(users.email, email)).limit(1);
@@ -48,63 +51,37 @@ export async function POST(request: Request) {
 	await db.insert(users).values({
 		id: userId,
 		email,
-		resetEmail: firstRunParsed?.success ? firstRunParsed.data.resetEmail : registerParsed!.data.resetEmail,
+		resetEmail: firstRunParsed.data.resetEmail,
 		passwordHash: hashPassword(password),
 		name,
+		role: "admin",
 	});
 
-	if (isFirstRun) {
-		try {
-			const { domain } = await addDomainForUser(env, userId, domainName!, {
-				enableRouting: true,
-				enableSending: true,
-			});
-			await ensureEmailRoutingRuleToWorker(env, domain.zoneId, email);
-			await db.insert(mailboxes).values({
-				id: newId("mbx"),
-				userId,
-				domainId: domain.id,
-				localPart: username!,
-				displayName: username!,
-			});
-		} catch (err) {
-			await db.delete(users).where(eq(users.id, userId));
-			const message = err instanceof Error ? err.message : "Domain setup failed";
-			return NextResponse.json({ error: message }, { status: 502 });
-		}
-	}
-
-	if (!isFirstRun) {
-		const [existingMailbox] = await db
-			.select()
-			.from(mailboxes)
-			.where(and(eq(mailboxes.domainId, primaryDomain!.id), eq(mailboxes.localPart, username)))
-			.limit(1);
-		if (existingMailbox) {
-			await db.delete(users).where(eq(users.id, userId));
-			return NextResponse.json({ error: "Mailbox already exists" }, { status: 409 });
-		}
-
-		try {
-			await ensureEmailRoutingRuleToWorker(env, primaryDomain!.zoneId, email);
-			await db.insert(mailboxes).values({
-				id: newId("mbx"),
-				userId,
-				domainId: primaryDomain!.id,
-				localPart: username,
-				displayName: username,
-			});
-		} catch (err) {
-			await db.delete(users).where(eq(users.id, userId));
-			const message = err instanceof Error ? err.message : "Mailbox setup failed";
-			return NextResponse.json({ error: message }, { status: 502 });
-		}
+	try {
+		const { domain } = await addDomainForUser(env, userId, domainName, {
+			enableRouting: true,
+			enableSending: true,
+		});
+		await ensureEmailRoutingRuleToWorker(env, domain.zoneId, email);
+		await db.insert(mailboxes).values({
+			id: newId("mbx"),
+			userId,
+			domainId: domain.id,
+			localPart: username,
+			displayName: username,
+		});
+	} catch (err) {
+		await db.delete(users).where(eq(users.id, userId));
+		const message = err instanceof Error ? err.message : "Domain setup failed";
+		return NextResponse.json({ error: message }, { status: 502 });
 	}
 
 	const token = await createSession(env, userId);
 	const response = NextResponse.json({ ok: true, token, redirect: "/inbox" });
+	response.headers.set("Cache-Control", "no-store");
 	response.cookies.set(SESSION_COOKIE, token, {
 		httpOnly: true,
+		secure: process.env.NODE_ENV === "production",
 		sameSite: "lax",
 		path: "/",
 		maxAge: 60 * 60 * 24 * 30,

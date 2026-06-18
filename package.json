@@ -1,21 +1,22 @@
 {
-  "name": "email-platform",
-  "version": "0.1.0",
+  "name": "mailflare-team",
+  "version": "0.1.11",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "deploy": "npm run db:migrate:remote && opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "upload": "opennextjs-cloudflare build && opennextjs-cloudflare upload",
+    "deploy": "opennextjs-cloudflare build && npm run deploy:worker",
+    "deploy:worker": "OPEN_NEXT_DEPLOY=true wrangler deploy",
+    "deploy:with-migrations": "npm run db:migrate:remote && npm run deploy",
+    "upload": "opennextjs-cloudflare build && OPEN_NEXT_DEPLOY=true wrangler versions upload",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote",
-    "db:m:l": "npm run db:migrate:local",
-    "db:m:r": "npm run db:migrate:remote",
+    "migrate": "wrangler d1 migrations apply DB",
     "db:seed": "curl -X POST http://localhost:3000/api/seed"
   },
   "cloudflare": {
@@ -23,11 +24,32 @@
       "CF_TOKEN": {
         "description": "Runtime Cloudflare API token used by Mailflare onboarding to call the Zones and Email Routing APIs. Cloudflare's deploy/build token is not passed to the app, so create this separately at https://dash.cloudflare.com/profile/api-tokens with `Zone Read`, `Email Routing Edit`, `Email Sending Edit`, and `Email Routing Rules Write` permissions for the zones you will connect. Paste only the token secret value, without `Bearer`."
       },
-      "CF_ACCOUNT_ID": {
+      "CF_AID": {
         "description": "Optional Cloudflare account ID. Leave blank unless your API token can access multiple accounts."
       },
+      "D1_DATABASE_ID": {
+        "description": "Cloudflare D1 database ID for the mailflare database. Required for automatic database backups."
+      },
+      "D1_BACKUP_TOKEN": {
+        "description": "Cloudflare API token with D1 Read permission for the target database. Store this as a secret; it is used only to export backups."
+      },
+      "TURNSTILE_SECRET_KEY": {
+        "description": "Cloudflare Turnstile secret key used to verify login and first-run registration challenges. Pair with NEXT_PUBLIC_TURNSTILE_SITE_KEY at build time."
+      },
+      "NEXT_PUBLIC_TURNSTILE_SITE_KEY": {
+        "description": "Cloudflare Turnstile public site key used by the login and first-run registration widgets."
+      },
       "CF_EMAIL_WORKER_NAME": {
-        "description": "Worker name used when creating Cloudflare Email Routing rules. Keep this aligned with the `name` in `wrangler.jsonc`; the template default is `mailflare`."
+        "description": "Worker name used when creating Cloudflare Email Routing rules. Set this to the deployed Worker name; if you rename the Worker, update this value too."
+      },
+      "GITHUB_UPDATE_TOKEN": {
+        "description": "Fine-grained GitHub token for the installation repository with Actions: write permission, Contents: write read permission. Used only by the admin update endpoint to dispatch update.yml."
+      },
+      "GITHUB_UPDATE_REF": {
+        "description": "Optional branch used to dispatch updates. Leave blank to use the repository default branch."
+      },
+      "GITHUB_UPDATE_REPO": {
+        "description": "Your github repository that connect to cloudflare worker"
       },
       "CF_EMAIL": {
         "description": "Legacy Global API Key auth only. Use this with `CF_API_KEY` instead of `CF_TOKEN`."
@@ -77,6 +99,6 @@
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
     "typescript": "^5.7.4",
-    "wrangler": "^4.93.0"
+    "wrangler": "^4.98.0"
   }
 }

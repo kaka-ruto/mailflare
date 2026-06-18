@@ -6,8 +6,10 @@ import { Check, LogOut, Mail, Settings } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { useMessageCounts } from "@/hooks/use-message-counts";
-import { authFetch, clearClientSessionToken } from "@/lib/auth/client";
+import { authFetch } from "@/lib/auth/client";
+import { logoutClientSession } from "@/lib/auth/logout";
 import { cn } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export function MailboxSelector() {
 	const { selectedMailbox, setSelectedMailbox, mailboxes, isLoading } =
@@ -15,6 +17,7 @@ export function MailboxSelector() {
 	const pathname = usePathname();
 	const router = useRouter();
 	const [open, setOpen] = useState(false);
+	const [isAdmin, setIsAdmin] = useState(false);
 	const ref = useRef<HTMLDivElement>(null);
 	const { counts } = useMessageCounts(null, open);
 
@@ -27,7 +30,27 @@ export function MailboxSelector() {
 		return () => document.removeEventListener("pointerdown", onPointerDown);
 	}, []);
 
-	if (isLoading) return null;
+	useEffect(() => {
+		authFetch("/api/auth/me", { redirectOnUnauthorized: false })
+			.then((response) => response.ok ? response.json() : null)
+			.then((data) => {
+				const authData = data as { user?: { role?: string } } | null;
+				setIsAdmin(authData?.user?.role === "admin");
+			})
+			.catch(() => setIsAdmin(false));
+	}, []);
+
+	if (isLoading) {
+		return (
+			<div className="flex items-center gap-3 px-2">
+				<div className="space-y-1.5">
+					<Skeleton className="h-3.5 w-24" />
+					<Skeleton className="h-2.5 w-16" />
+				</div>
+				<Skeleton className="h-8 w-8 rounded-full" />
+			</div>
+		);
+	}
 
 	const selectedName = selectedMailbox?.displayName ?? selectedMailbox?.localPart ?? "All mailboxes";
 	const selectedEmail = selectedMailbox
@@ -37,15 +60,14 @@ export function MailboxSelector() {
 		pathname === "/admin" ||
 		pathname.startsWith("/mailboxes") ||
 		pathname.startsWith("/domains") ||
-		pathname.startsWith("/routing") ||
 		pathname.startsWith("/api-keys") ||
 		pathname.startsWith("/webhooks");
 
 	async function logout() {
-		await authFetch("/api/auth/logout", { method: "POST", redirectOnUnauthorized: false });
-		clearClientSessionToken();
+		await logoutClientSession();
 		setOpen(false);
-		router.push("/login");
+		router.replace("/login");
+		router.refresh();
 	}
 
 	return (
@@ -78,7 +100,6 @@ export function MailboxSelector() {
 						const active = !adminActive && selectedMailbox?.id === mb.id;
 						const mailboxCount = counts.mailboxes.find((count) => count.mailboxId === mb.id);
 						const unread = mailboxCount?.unread ?? 0;
-						const inbox = mailboxCount?.inbox ?? 0;
 
 						return (
 							<button
@@ -106,10 +127,7 @@ export function MailboxSelector() {
 											</span>
 										)}
 									</div>
-									<p className="truncate text-xs text-neutral-500">
-										{email}
-										{inbox > 0 && ` · ${inbox} inbox`}
-									</p>
+									<p className="truncate text-xs text-neutral-500">{email}</p>
 								</div>
 								{unread > 0 && (
 									<span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
@@ -121,23 +139,25 @@ export function MailboxSelector() {
 						);
 					})}
 					<div className="mt-2 border-t divide-y divide-neutral-100 border-neutral-100 pt-2">
-						<Link
-							href="/admin"
-							onClick={() => setOpen(false)}
-							className={cn(
-								"flex items-center gap-3 px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]",
-								adminActive && "bg-blue-50",
-							)}
-						>
-							<div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
-								<Settings className="h-4 w-4" />
-							</div>
-							<div>
-								<p className="text-sm font-medium text-neutral-900">Admin settings</p>
-								<p className="text-xs text-neutral-500">Domains, mailboxes, API keys</p>
-							</div>
-							{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
-						</Link>
+						{isAdmin && (
+							<Link
+								href="/admin"
+								onClick={() => setOpen(false)}
+								className={cn(
+									"flex items-center gap-3 px-4 py-3 text-sm font-medium text-neutral-700 hover:bg-[#f2f6fc]",
+									adminActive && "bg-blue-50",
+								)}
+							>
+								<div className="flex h-9 w-9 items-center justify-center rounded-full bg-neutral-100 text-neutral-700">
+									<Settings className="h-4 w-4" />
+								</div>
+								<div>
+									<p className="text-sm font-medium text-neutral-900">Admin settings</p>
+									<p className="text-xs text-neutral-500">Domains, mailboxes, API keys</p>
+								</div>
+								{adminActive && <Check className="ml-auto h-4 w-4 text-blue-600" />}
+							</Link>
+						)}
 						<button
 							type="button"
 							onClick={logout}

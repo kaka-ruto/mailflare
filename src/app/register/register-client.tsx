@@ -8,6 +8,7 @@ import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { TurnstileField } from "@/components/auth/turnstile";
 import {
   getSetupStatus,
   submitPrimaryDomain,
@@ -16,6 +17,7 @@ import {
 
 export function RegisterClient() {
   const router = useRouter();
+  const [hasAdminAccount, setHasAdminAccount] = useState<boolean | null>(null);
   const [hasPrimaryDomain, setHasPrimaryDomain] = useState<boolean | null>(
     null,
   );
@@ -24,14 +26,19 @@ export function RegisterClient() {
   const [step, setStep] = useState<1 | 2>(1);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileReset, setTurnstileReset] = useState(0);
 
   useEffect(() => {
     void getSetupStatus()
       .then((data) => {
+        setHasAdminAccount(data.hasAdminAccount);
         setHasPrimaryDomain(data.hasPrimaryDomain);
         setPrimaryDomain(data.primaryDomain?.hostname ?? null);
       })
-      .catch(() => setHasPrimaryDomain(true));
+      .catch(() => {
+        setHasAdminAccount(true);
+        setHasPrimaryDomain(true);
+      });
   }, []);
 
   async function onDomainSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -59,28 +66,58 @@ export function RegisterClient() {
     setError(null);
 
     const form = new FormData(e.currentTarget);
-    const firstRun = hasPrimaryDomain === false;
-    const domain = firstRun ? setupDomain : primaryDomain;
+    const domain = setupDomain ?? primaryDomain;
     if (!domain) {
       setLoading(false);
       setError("Domain setup is not complete");
       return;
     }
 
-    const { ok, data } = await submitRegistration(form, { firstRun, domain });
+    const { ok, data } = await submitRegistration(form, { firstRun: true, domain });
     setLoading(false);
     if (!ok) {
       setError(
         typeof data.error === "string" ? data.error : "Registration failed",
       );
+      setTurnstileReset((value) => value + 1);
       return;
     }
     router.push(data.redirect ?? "/inbox");
   }
 
-  const firstRun = hasPrimaryDomain === false;
-  const accountDomain = firstRun ? setupDomain : primaryDomain;
-  const showDomainStep = firstRun && step === 1;
+  const accountDomain = setupDomain ?? primaryDomain;
+  const showDomainStep = hasPrimaryDomain === false && step === 1;
+
+  if (hasAdminAccount === true) {
+    return (
+      <AuthShell
+        icon={MailPlus}
+        title="Account registration is closed"
+        footer={
+          <Link
+            href="/login"
+            className="inline-flex items-center gap-2 hover:underline"
+          >
+            Sign in instead
+            <ArrowRight className="h-4 w-4" />
+          </Link>
+        }
+      >
+        <div className="space-y-5">
+          <p className="text-sm leading-6 text-neutral-600">
+            This installation already has an account for {primaryDomain ?? "this workspace"}.
+          </p>
+          <Button
+            type="button"
+            className="h-11 w-full rounded-full px-6 active:scale-[0.98]"
+            onClick={() => router.push("/login")}
+          >
+            Go to login
+          </Button>
+        </div>
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell
@@ -92,7 +129,7 @@ export function RegisterClient() {
       // 		: `Choose a mailbox username on ${accountDomain ?? "the primary domain"} and add a recovery email.`
       // }
       steps={
-        firstRun
+        hasAdminAccount === false && hasPrimaryDomain === false
           ? [
               { label: "Domain", active: step === 1 },
               { label: "Account", active: step === 2 },
@@ -184,10 +221,11 @@ export function RegisterClient() {
               {error}
             </p>
           )}
+          <TurnstileField resetSignal={turnstileReset} />
           <Button
             type="submit"
             className="h-11 w-full rounded-full px-6 active:scale-[0.98] mt-8"
-            disabled={loading || hasPrimaryDomain === null}
+            disabled={loading || hasAdminAccount === null || hasPrimaryDomain === null}
           >
             {loading ? "Creating..." : "Create account"}
           </Button>

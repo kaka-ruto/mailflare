@@ -4,6 +4,8 @@ export type Mailbox = {
 	displayName: string | null;
 	domainId: string;
 	hostname: string;
+	type?: "personal" | "shared";
+	permission?: "read_only" | "send_as" | "send_on_behalf" | "full_access";
 	isPrimary?: boolean;
 };
 

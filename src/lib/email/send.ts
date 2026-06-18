@@ -1,13 +1,14 @@
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { getDb } from "@/db";
-import { domains, mailboxes, messageBodies, messages, outboundJobs } from "@/db/schema";
+import { messageBodies, messages, outboundJobs } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet } from "@/lib/email/parse";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
-import { ensureEmailRoutingRuleToWorker } from "@/lib/cloudflare-api";
 import { upsertContactFromAddress } from "@/lib/contacts/service";
-import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
-import { parseAddress } from "@/lib/utils";
+import { getAuthorizedSenderAddress } from "@/lib/email/sender";
+import { createAuditLog } from "@/lib/mailboxes/audit";
+import { storeMessageAttachments, validateAttachments } from "@/lib/email/attachments";
+import type { AttachmentContent } from "@/lib/email/attachment-types";
 
 export type SendEmailInput = {
 	userId: string;
@@ -16,44 +17,15 @@ export type SendEmailInput = {
 	subject: string;
 	html?: string;
 	text?: string;
-	mailboxId?: string;
+	mailboxId: string;
+	attachments?: AttachmentContent[];
 };
-
-export async function validateSenderDomain(
-	env: CloudflareEnv,
-	userId: string,
-	from: string,
-): Promise<boolean> {
-	const parsed = parseAddress(from);
-	if (!parsed) return false;
-	const db = getDb(env);
-	const [domain] = await db
-		.select()
-		.from(domains)
-		.where(and(eq(domains.hostname, parsed.domain), eq(domains.status, "active")))
-		.limit(1);
-	if (!domain) return false;
-
-	const [mailbox] = await db
-		.select()
-		.from(mailboxes)
-		.where(and(eq(mailboxes.domainId, domain.id), eq(mailboxes.localPart, parsed.local), eq(mailboxes.userId, userId)))
-		.limit(1);
-
-	if (!mailbox) return false;
-
-	await ensureEmailRoutingRuleToWorker(env, domain.zoneId, `${parsed.local}@${parsed.domain}`);
-	return true;
-}
 
 export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Promise<{ messageId: string }> {
 	const db = getDb(env);
-	// const allowed = await validateSenderDomain(env, input.userId, input.from);
-	// if (!allowed) {
-	// 	throw new Error(`Sender address is not an active mailbox for your account: ${input.from}`);
-	// }
-
-	const fromAddr = await getFormattedSenderAddress(env, input);
+	const sender = await getAuthorizedSenderAddress(env, input);
+	const attachments = input.attachments ?? [];
+	validateAttachments(attachments);
 	await upsertContactFromAddress(env, {
 		userId: input.userId,
 		address: input.to,
@@ -65,9 +37,9 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 	await db.insert(messages).values({
 		id: messageId,
 		userId: input.userId,
-		mailboxId: input.mailboxId ?? null,
+		mailboxId: sender.mailboxId,
 		direction: "outbound",
-		fromAddr,
+		fromAddr: sender.fromAddr,
 		toAddr: input.to,
 		subject: input.subject,
 		snippet,
@@ -80,6 +52,12 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 		textBody: input.text ?? null,
 		htmlBody: input.html ?? null,
 	});
+	try {
+		await storeMessageAttachments(env, messageId, attachments);
+	} catch (error) {
+		await db.delete(messages).where(eq(messages.id, messageId));
+		throw error;
+	}
 
 	const jobId = newId("job");
 	await db.insert(outboundJobs).values({
@@ -87,16 +65,37 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 		userId: input.userId,
 		messageId,
 		status: "queued",
-		payload: JSON.stringify(input),
+		payload: JSON.stringify({
+			...input,
+			from: sender.fromAddr,
+			mailboxId: sender.mailboxId,
+			attachments: attachments.map(({ content: _content, ...attachment }) => attachment),
+		}),
 	});
 
 	try {
 		const response = await env.EMAIL.send({
-			from: fromAddr,
+			from: sender.fromAddr,
 			to: input.to,
 			subject: input.subject,
 			html: input.html,
 			text: input.text,
+			attachments: attachments.map((attachment) =>
+				attachment.disposition === "inline" && attachment.contentId
+					? {
+							filename: attachment.filename,
+							type: attachment.type,
+							content: attachment.content,
+							disposition: "inline" as const,
+							contentId: attachment.contentId,
+						}
+					: {
+							filename: attachment.filename,
+							type: attachment.type,
+							content: attachment.content,
+							disposition: "attachment" as const,
+						},
+			),
 		});
 
 		await db
@@ -110,6 +109,13 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 			providerMessageId: response.messageId,
 			to: input.to,
 		});
+		await createAuditLog(env, {
+			actorUserId: input.userId,
+			mailboxId: sender.mailboxId,
+			messageId,
+			action: "email.send",
+			metadata: { to: input.to, subject: input.subject },
+		});
 
 		return { messageId };
 	} catch (err) {
@@ -122,30 +128,6 @@ export async function sendEmail(env: CloudflareEnv, input: SendEmailInput): Prom
 		await dispatchWebhooks(env, input.userId, "message.failed", { messageId, error });
 		throw err;
 	}
-}
-
-async function getFormattedSenderAddress(env: CloudflareEnv, input: SendEmailInput): Promise<string> {
-	if (!input.mailboxId) return input.from;
-
-	const db = getDb(env);
-	const [mailbox] = await db
-		.select({
-			localPart: mailboxes.localPart,
-			displayName: mailboxes.displayName,
-			hostname: domains.hostname,
-		})
-		.from(mailboxes)
-		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
-		.where(and(eq(mailboxes.id, input.mailboxId), eq(mailboxes.userId, input.userId)))
-		.limit(1);
-
-	if (!mailbox) return input.from;
-
-	const requestedAddress = getEmailAddress(input.from);
-	const mailboxAddress = `${mailbox.localPart}@${mailbox.hostname}`;
-	if (requestedAddress.toLowerCase() !== mailboxAddress.toLowerCase()) return input.from;
-
-	return formatEmailAddress(mailboxAddress, mailbox.displayName ?? mailbox.localPart);
 }
 
 export type OutboundQueueMessage = SendEmailInput & { jobId?: string };

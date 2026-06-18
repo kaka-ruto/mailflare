@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Globe2, KeyRound, Mail, Settings, Webhook } from "lucide-react";
+import { AdminUpdateCard } from "@/components/admin-update-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 const sections = [
@@ -15,29 +16,29 @@ const sections = [
 		description: "Add Cloudflare domains and inspect DNS state.",
 		icon: Globe2,
 	},
-	{
-		href: "/api-keys",
-		title: "API Keys",
-		description: "Manage API credentials for programmatic access.",
-		icon: KeyRound,
-	},
-	{
-		href: "/webhooks",
-		title: "Webhooks",
-		description: "Send mail events to external systems.",
-		icon: Webhook,
-	},
-	{
-		href: "/settings",
-		title: "Account",
-		description: "View personal account and platform configuration.",
-		icon: Settings,
-	},
+	// {
+	// 	href: "/api-keys",
+	// 	title: "API Keys",
+	// 	description: "Manage API credentials for programmatic access.",
+	// 	icon: KeyRound,
+	// },
+	// {
+	// 	href: "/webhooks",
+	// 	title: "Webhooks",
+	// 	description: "Send mail events to external systems.",
+	// 	icon: Webhook,
+	// },
+	// {
+	// 	href: "/settings",
+	// 	title: "Account",
+	// 	description: "View personal account and platform configuration.",
+	// 	icon: Settings,
+	// },
 ];
 
 export default function AdminSettingsPage() {
 	return (
-		<div className="h-full overflow-auto">
+		<div>
 			<div className="mb-8">
 				<h1 className="text-2xl font-normal text-neutral-900">Admin settings</h1>
 				<p className="mt-2 text-sm text-neutral-500">
@@ -64,6 +65,9 @@ export default function AdminSettingsPage() {
 						</Link>
 					);
 				})}
+			</div>
+			<div className="mt-8">
+				<AdminUpdateCard />
 			</div>
 		</div>
 	);

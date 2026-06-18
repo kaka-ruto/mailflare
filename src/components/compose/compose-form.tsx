@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Minimize2, Send, X } from "lucide-react";
+import { FileText, Minimize2, Paperclip, Send, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +10,8 @@ import { useSelectedMailbox } from "@/components/mailbox-provider";
 import { authFetch } from "@/lib/auth/client";
 import { formatEmailAddress } from "@/lib/email/address";
 import { cn } from "@/lib/utils";
-import { fetchDraft } from "./utils";
+import { buildSendFormData, fetchDraft, formatAttachmentSize } from "./utils";
+import type { ComposeAttachment } from "./types";
 
 type Toast = { type: "success" | "error"; message: string } | null;
 
@@ -28,18 +29,20 @@ export function ComposeForm({
 	const [to, setTo] = useState("");
 	const [subject, setSubject] = useState("");
 	const [text, setText] = useState("");
+	const [attachments, setAttachments] = useState<ComposeAttachment[]>([]);
 	const [toast, setToast] = useState<Toast>(null);
 	const [loading, setLoading] = useState(false);
 	const [loadingDraft, setLoadingDraft] = useState(false);
 	const [loadedDraftMailboxId, setLoadedDraftMailboxId] = useState<string | null>(null);
 	const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const attachmentInput = useRef<HTMLInputElement | null>(null);
 
 	const fromAddr = useMemo(
 		() =>
 			selectedMailbox
 				? formatEmailAddress(
 						`${selectedMailbox.localPart}@${selectedMailbox.hostname}`,
-						selectedMailbox.displayName ?? selectedMailbox.localPart,
+						selectedMailbox.displayName,
 					)
 				: "",
 		[selectedMailbox],
@@ -82,10 +85,11 @@ export function ComposeForm({
 
 	useEffect(() => {
 		if (!loadedDraftMailboxId) return;
+		if (selectedMailbox?.id === loadedDraftMailboxId) return;
 
 		const draftMailbox = mailboxes.find((mailbox) => mailbox.id === loadedDraftMailboxId);
 		if (draftMailbox) setSelectedMailbox(draftMailbox);
-	}, [loadedDraftMailboxId, mailboxes, setSelectedMailbox]);
+	}, [loadedDraftMailboxId, mailboxes, selectedMailbox?.id, setSelectedMailbox]);
 
 	useEffect(() => {
 		const hasContent = to.trim() || subject.trim() || text.trim();
@@ -119,8 +123,8 @@ export function ComposeForm({
 		setLoading(true);
 		const res = await authFetch("/api/send", {
 			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
+			body: buildSendFormData({
+				attachments,
 				from: fromAddr,
 				to,
 				subject,
@@ -145,8 +149,38 @@ export function ComposeForm({
 		setTo("");
 		setSubject("");
 		setText("");
+		setAttachments([]);
 		setToast({ type: "success", message: "Message sent" });
 		window.dispatchEvent(new Event("mailflare:messages-changed"));
+	}
+
+	function addAttachments(files: FileList | null) {
+		if (!files) return;
+		const nextFiles = Array.from(files);
+		const nextCount = attachments.length + nextFiles.length;
+		const totalSize = [...attachments.map((attachment) => attachment.file), ...nextFiles].reduce(
+			(total, file) => total + file.size,
+			0,
+		);
+
+		if (nextCount > 10) {
+			setToast({ type: "error", message: "A message can include at most 10 attachments" });
+			return;
+		}
+		if (nextFiles.some((file) => file.size > 10 * 1024 * 1024)) {
+			setToast({ type: "error", message: "Each attachment must be 10 MB or smaller" });
+			return;
+		}
+		if (totalSize > 20 * 1024 * 1024) {
+			setToast({ type: "error", message: "Attachments must total 20 MB or less" });
+			return;
+		}
+
+		setAttachments((current) => [
+			...current,
+			...nextFiles.map((file) => ({ id: crypto.randomUUID(), file })),
+		]);
+		if (attachmentInput.current) attachmentInput.current.value = "";
 	}
 
 	const frameClass =
@@ -220,12 +254,56 @@ export function ComposeForm({
 						id={`${mode}-text`}
 						value={text}
 						onChange={(event) => setText(event.target.value)}
-						required
 						disabled={loadingDraft}
 						className="h-full min-h-full resize-none border-0 px-0 shadow-none focus-visible:ring-0"
 					/>
 				</div>
+				{attachments.length > 0 && (
+					<div className="flex flex-wrap gap-2 border-t border-neutral-100 px-4 py-3">
+						{attachments.map((attachment) => (
+							<div
+								key={attachment.id}
+								className="flex max-w-full items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
+							>
+								<FileText className="h-4 w-4 shrink-0 text-neutral-500" />
+								<span className="max-w-48 truncate">{attachment.file.name}</span>
+								<span className="text-xs text-neutral-400">
+									{formatAttachmentSize(attachment.file.size)}
+								</span>
+								<button
+									type="button"
+									onClick={() =>
+										setAttachments((current) =>
+											current.filter((item) => item.id !== attachment.id),
+										)
+									}
+									className="rounded-full p-1 text-neutral-400 hover:bg-neutral-200 hover:text-neutral-700"
+								>
+									<X className="h-3.5 w-3.5" />
+									<span className="sr-only">Remove attachment</span>
+								</button>
+							</div>
+						))}
+					</div>
+				)}
 				<div className="flex items-center gap-3 border-t border-neutral-100 px-4 py-3">
+					<input
+						ref={attachmentInput}
+						type="file"
+						multiple
+						className="hidden"
+						onChange={(event) => addAttachments(event.target.files)}
+					/>
+					<Button
+						type="button"
+						variant="ghost"
+						size="sm"
+						onClick={() => attachmentInput.current?.click()}
+						disabled={loading || loadingDraft}
+					>
+						<Paperclip className="h-4 w-4" />
+						Attach
+					</Button>
 					<span className="flex-1" />
 					<p className="text-xs text-neutral-500">{draftId ? "Saved to drafts" : "Autosaves as draft"}</p>
 					<Button type="submit" disabled={loading || loadingDraft || !fromAddr} className="rounded-full px-5">

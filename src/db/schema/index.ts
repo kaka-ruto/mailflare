@@ -1,4 +1,5 @@
 import { sqliteTable, text, integer, index, uniqueIndex } from "drizzle-orm/sqlite-core";
+import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
 	id: text("id").primaryKey(),
@@ -6,6 +7,9 @@ export const users = sqliteTable("users", {
 	resetEmail: text("reset_email"),
 	passwordHash: text("password_hash").notNull(),
 	name: text("name").notNull(),
+	role: text("role", { enum: ["admin", "user"] }).notNull().default("user"),
+	disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
+	createdByUserId: text("created_by_user_id").references((): AnySQLiteColumn => users.id, { onDelete: "set null" }),
 	createdAt: integer("created_at", { mode: "timestamp" })
 		.notNull()
 		.$defaultFn(() => new Date()),
@@ -49,11 +53,38 @@ export const mailboxes = sqliteTable(
 			.references(() => domains.id, { onDelete: "cascade" }),
 		localPart: text("local_part").notNull(),
 		displayName: text("display_name"),
+		type: text("type", { enum: ["personal", "shared"] }).notNull().default("personal"),
+		disabled: integer("disabled", { mode: "boolean" }).notNull().default(false),
 		createdAt: integer("created_at", { mode: "timestamp" })
 			.notNull()
 			.$defaultFn(() => new Date()),
 	},
 	(t) => [uniqueIndex("mailboxes_address_idx").on(t.domainId, t.localPart)],
+);
+
+export const mailboxAccess = sqliteTable(
+	"mailbox_access",
+	{
+		id: text("id").primaryKey(),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		permission: text("permission", { enum: ["read_only", "send_as", "send_on_behalf", "full_access"] })
+			.notNull()
+			.default("read_only"),
+		createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("mailbox_access_mailbox_user_idx").on(t.mailboxId, t.userId),
+		index("mailbox_access_user_idx").on(t.userId),
+		index("mailbox_access_mailbox_idx").on(t.mailboxId),
+	],
 );
 
 export const contacts = sqliteTable(
@@ -76,6 +107,28 @@ export const contacts = sqliteTable(
 	(t) => [
 		uniqueIndex("contacts_user_email_idx").on(t.userId, t.email),
 		index("contacts_user_idx").on(t.userId),
+	],
+);
+
+export const folders = sqliteTable(
+	"folders",
+	{
+		id: text("id").primaryKey(),
+		userId: text("user_id")
+			.notNull()
+			.references(() => users.id, { onDelete: "cascade" }),
+		mailboxId: text("mailbox_id")
+			.notNull()
+			.references(() => mailboxes.id, { onDelete: "cascade" }),
+		name: text("name").notNull(),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		uniqueIndex("folders_mailbox_name_idx").on(t.mailboxId, t.name),
+		index("folders_user_idx").on(t.userId),
+		index("folders_mailbox_idx").on(t.mailboxId),
 	],
 );
 
@@ -104,6 +157,7 @@ export const messages = sqliteTable(
 		mailboxId: text("mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
 		direction: text("direction", { enum: ["inbound", "outbound"] }).notNull(),
 		providerMessageId: text("provider_message_id"),
+		folderId: text("folder_id").references(() => folders.id, { onDelete: "set null" }),
 		fromAddr: text("from_addr").notNull(),
 		toAddr: text("to_addr").notNull(),
 		subject: text("subject"),
@@ -118,6 +172,7 @@ export const messages = sqliteTable(
 	(t) => [
 		index("messages_user_created_idx").on(t.userId, t.createdAt),
 		index("messages_mailbox_idx").on(t.mailboxId),
+		index("messages_folder_idx").on(t.folderId),
 	],
 );
 
@@ -131,6 +186,28 @@ export const messageBodies = sqliteTable("message_bodies", {
 	htmlBody: text("html_body"),
 	rawR2Key: text("raw_r2_key"),
 });
+
+export const messageAttachments = sqliteTable(
+	"message_attachments",
+	{
+		id: text("id").primaryKey(),
+		messageId: text("message_id")
+			.notNull()
+			.references(() => messages.id, { onDelete: "cascade" }),
+		filename: text("filename").notNull(),
+		contentType: text("content_type").notNull(),
+		size: integer("size").notNull(),
+		disposition: text("disposition", { enum: ["attachment", "inline"] })
+			.notNull()
+			.default("attachment"),
+		contentId: text("content_id"),
+		r2Key: text("r2_key").notNull().unique(),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [index("message_attachments_message_idx").on(t.messageId)],
+);
 
 export const outboundJobs = sqliteTable("outbound_jobs", {
 	id: text("id").primaryKey(),
@@ -158,8 +235,12 @@ export const routingRules = sqliteTable("routing_rules", {
 		.notNull()
 		.references(() => domains.id, { onDelete: "cascade" }),
 	pattern: text("pattern").notNull(),
+	matchField: text("match_field", { enum: ["email", "content", "title"] }).notNull().default("email"),
+	matchOperator: text("match_operator", { enum: ["contains", "exact"] }).notNull().default("contains"),
+	matchValue: text("match_value").notNull().default(""),
 	mailboxId: text("mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
-	action: text("action", { enum: ["store", "forward", "reject"] }).notNull().default("store"),
+	folderId: text("folder_id").references(() => folders.id, { onDelete: "set null" }),
+	action: text("action", { enum: ["store", "forward", "reject", "spam", "trash"] }).notNull().default("store"),
 	forwardTo: text("forward_to"),
 	priority: integer("priority").notNull().default(0),
 	createdAt: integer("created_at", { mode: "timestamp" })
@@ -207,17 +288,83 @@ export const sessions = sqliteTable("sessions", {
 		.$defaultFn(() => new Date()),
 });
 
+export const auditLogs = sqliteTable(
+	"audit_logs",
+	{
+		id: text("id").primaryKey(),
+		actorUserId: text("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+		targetUserId: text("target_user_id").references(() => users.id, { onDelete: "set null" }),
+		mailboxId: text("mailbox_id").references(() => mailboxes.id, { onDelete: "set null" }),
+		messageId: text("message_id").references(() => messages.id, { onDelete: "set null" }),
+		action: text("action").notNull(),
+		metadata: text("metadata"),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(t) => [
+		index("audit_logs_actor_idx").on(t.actorUserId),
+		index("audit_logs_mailbox_idx").on(t.mailboxId),
+		index("audit_logs_created_idx").on(t.createdAt),
+	],
+);
+
+export const backupSettings = sqliteTable("backup_settings", {
+	id: text("id").primaryKey(),
+	enabled: integer("enabled", { mode: "boolean" }).notNull().default(false),
+	scheduleType: text("schedule_type", { enum: ["daily", "weekly", "monthly"] })
+		.notNull()
+		.default("daily"),
+	scheduleValue: integer("schedule_value"),
+	retentionEnabled: integer("retention_enabled", { mode: "boolean" }).notNull().default(false),
+	retentionDays: integer("retention_days").notNull().default(30),
+	updatedAt: integer("updated_at", { mode: "timestamp" })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
+
+export const backups = sqliteTable(
+	"backups",
+	{
+		id: text("id").primaryKey(),
+		status: text("status", { enum: ["queued", "running", "completed", "failed"] })
+			.notNull()
+			.default("queued"),
+		trigger: text("trigger", { enum: ["manual", "scheduled"] }).notNull(),
+		r2Key: text("r2_key"),
+		filename: text("filename"),
+		size: integer("size"),
+		error: text("error"),
+		createdByUserId: text("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
+		createdAt: integer("created_at", { mode: "timestamp" })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		startedAt: integer("started_at", { mode: "timestamp" }),
+		completedAt: integer("completed_at", { mode: "timestamp" }),
+	},
+	(t) => [
+		index("backups_created_idx").on(t.createdAt),
+		index("backups_status_idx").on(t.status),
+	],
+);
+
 export const schema = {
 	users,
 	domains,
 	mailboxes,
+	mailboxAccess,
 	contacts,
+	folders,
 	apiKeys,
 	messages,
 	messageBodies,
+	messageAttachments,
 	outboundJobs,
 	routingRules,
 	webhooks,
 	webhookDeliveries,
 	sessions,
+	auditLogs,
+	backupSettings,
+	backups,
 };

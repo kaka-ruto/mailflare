@@ -33,11 +33,13 @@ export async function submitRegistration(
 						username: form.get("username"),
 						password: form.get("password"),
 						resetEmail: form.get("resetEmail"),
+						turnstileToken: form.get("turnstileToken"),
 					}
 				: {
 						username: form.get("username"),
 						password: form.get("password"),
 						resetEmail: form.get("resetEmail"),
+						turnstileToken: form.get("turnstileToken"),
 					},
 		),
 	});

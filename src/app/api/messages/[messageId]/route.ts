@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/cookies";
 import { getEnv } from "@/lib/cloudflare";
-import { getMessageWithBody } from "@/lib/email/inbound";
+import { getMessageWithBodyForUser } from "@/lib/email/inbound";
 
 type MessageRouteParams = {
 	params: Promise<{ messageId: string }>;
@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: MessageRouteParams) {
 	}
 
 	const { messageId } = await params;
-	const data = await getMessageWithBody(env, user.id, messageId);
+	const data = await getMessageWithBodyForUser(env, user, messageId);
 	if (!data) {
 		return NextResponse.json({ error: "Not found" }, { status: 404 });
 	}

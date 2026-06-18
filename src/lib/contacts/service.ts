@@ -48,7 +48,7 @@ export async function upsertContactFromAddress(env: CloudflareEnv, input: Contac
 }
 
 export async function getContactDisplayNameMap(env: CloudflareEnv, userId: string, addresses: string[]) {
-	const emails = [...new Set(addresses.map(normalizeEmailAddress).filter(Boolean))];
+	const emails = Array.from(new Set(addresses.map(normalizeEmailAddress).filter(Boolean)));
 	if (emails.length === 0) return new Map<string, string>();
 
 	const db = getDb(env);

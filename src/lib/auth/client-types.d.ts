@@ -8,3 +8,7 @@ export type AuthSessionResponse = {
 	redirect?: string;
 	error?: string;
 };
+
+export type AuthSessionChangedDetail = {
+	authenticated: boolean;
+};

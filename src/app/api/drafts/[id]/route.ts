@@ -7,6 +7,9 @@ import { requireUser } from "@/lib/auth/cookies";
 import { buildSnippet } from "@/lib/email/parse";
 import type { DraftPayload, DraftRouteParams } from "./types";
 import { selectDraftWithBody } from "./utils";
+import { readJsonBody } from "@/lib/http/request";
+import { RequestBodyTooLargeError } from "@/lib/http/errors";
+import { getDraftSender, userOwnsDraft } from "../utils";
 
 export async function GET(request: Request, { params }: DraftRouteParams) {
 	const { id } = await params;
@@ -26,12 +29,22 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 	const { id } = await params;
 	const env = getEnv();
 	const user = await requireUser(env, request);
-	const input = (await request.json()) as DraftPayload;
+	let input: DraftPayload;
+	try {
+		input = await readJsonBody<DraftPayload>(request, 1024 * 1024);
+	} catch (error) {
+		const status = error instanceof RequestBodyTooLargeError ? 413 : 400;
+		return NextResponse.json({ error: "Invalid draft request" }, { status });
+	}
 	const db = getDb(env);
 	const [draft] = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
 
-	if (!draft || draft.userId !== user.id || draft.status !== "draft") {
+	if (!userOwnsDraft(draft, user.id)) {
 		return NextResponse.json({ error: "Draft not found" }, { status: 404 });
+	}
+	const sender = await getDraftSender(env, user.id, input);
+	if ("error" in sender) {
+		return NextResponse.json({ error: sender.error }, { status: 403 });
 	}
 
 	const text = input.text ?? "";
@@ -39,8 +52,8 @@ export async function PATCH(request: Request, { params }: DraftRouteParams) {
 	await db
 		.update(messages)
 		.set({
-			mailboxId: input.mailboxId ?? null,
-			fromAddr: input.from ?? "",
+			mailboxId: sender.mailboxId,
+			fromAddr: sender.fromAddr,
 			toAddr: input.to ?? "",
 			subject: input.subject ?? null,
 			snippet: buildSnippet(text || null, html || null),
@@ -65,7 +78,7 @@ export async function DELETE(request: Request, { params }: DraftRouteParams) {
 	const db = getDb(env);
 	const [draft] = await db.select().from(messages).where(eq(messages.id, id)).limit(1);
 
-	if (!draft || draft.userId !== user.id || draft.status !== "draft") {
+	if (!userOwnsDraft(draft, user.id)) {
 		return NextResponse.json({ error: "Draft not found" }, { status: 404 });
 	}
 

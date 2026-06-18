@@ -1,19 +1,8 @@
-'use client'
+"use client";
 
-import { ShieldAlert } from "lucide-react";
+import { spamFolderConfig } from "@/components/messages/message-folder-configs";
 import { MessageFolderPage } from "@/components/messages/message-folder-page";
 
 export default function SpamPage() {
-	return (
-		<MessageFolderPage
-			config={{
-				folder: "spam",
-				title: "Spam",
-				emptyText: "No spam",
-				hrefPrefix: "/spam",
-				icon: ShieldAlert,
-				badgeVariant: "outline",
-			}}
-		/>
-	);
+	return <MessageFolderPage config={spamFolderConfig} />;
 }

@@ -2,18 +2,27 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowRight, Mail } from "lucide-react";
 import { AuthShell } from "@/components/auth/auth-shell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { submitLogin } from "./utils";
+import { TurnstileField } from "@/components/auth/turnstile";
+import { getRegistrationStatus, submitLogin } from "./utils";
 
 export function LoginClient() {
   const router = useRouter();
+  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [turnstileReset, setTurnstileReset] = useState(0);
+
+  useEffect(() => {
+    void getRegistrationStatus()
+      .then((status) => setRegistrationOpen(!status.hasAdminAccount))
+      .catch(() => setRegistrationOpen(false));
+  }, []);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -24,9 +33,11 @@ export function LoginClient() {
     setLoading(false);
     if (!ok) {
       setError(data.error ?? "Login failed");
+      setTurnstileReset((value) => value + 1);
       return;
     }
-    router.push(data.redirect ?? "/inbox");
+    router.replace(data.redirect ?? "/inbox");
+    router.refresh();
   }
 
   return (
@@ -34,7 +45,7 @@ export function LoginClient() {
       icon={Mail}
       title="Sign in"
       description="Open your mailbox and continue from the same inbox workspace."
-      footer={
+      footer={registrationOpen ? (
         <Link
           href="/register"
           className="inline-flex items-center gap-2 hover:underline"
@@ -42,7 +53,7 @@ export function LoginClient() {
           Create account
           <ArrowRight className="h-4 w-4" />
         </Link>
-      }
+      ) : undefined}
     >
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="space-y-2">
@@ -70,6 +81,7 @@ export function LoginClient() {
             {error}
           </p>
         )}
+        <TurnstileField resetSignal={turnstileReset} />
         <Button
           type="submit"
           className="h-11 w-full rounded-full px-6 active:scale-[0.98]"

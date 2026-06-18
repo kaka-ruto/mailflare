@@ -7,9 +7,30 @@ import {
 } from "./src/lib/email/inbound";
 import { processOutboundQueue, type OutboundQueueMessage } from "./src/lib/email/send";
 import { isInboundQueueMessage } from "./worker-utils";
+import { getUserFromSession } from "./src/lib/auth/session";
+import { getSessionTokenFromRequest } from "./src/lib/realtime/utils";
+export { RealtimeHub } from "./src/lib/realtime/hub";
+export { DatabaseBackupWorkflow } from "./src/lib/backups/workflow";
 
 export default {
-	fetch: nextHandler.fetch,
+	async fetch(request: Request, env: CloudflareEnv, ctx: ExecutionContext) {
+		const url = new URL(request.url);
+		if (url.pathname === "/api/realtime") {
+			if (request.headers.get("Upgrade")?.toLowerCase() !== "websocket") {
+				return new Response("Expected WebSocket upgrade", { status: 426 });
+			}
+
+			const user = await getUserFromSession(env, getSessionTokenFromRequest(request));
+			if (!user || user.disabled) {
+				return new Response("Unauthorized", { status: 401 });
+			}
+
+			const hub = env.REALTIME.getByName(user.id);
+			return hub.fetch(new Request("https://mailflare-realtime/connect", request));
+		}
+
+		return nextHandler.fetch(request, env, ctx);
+	},
 
 	async email(message: ForwardableEmailMessage, env: CloudflareEnv, ctx: ExecutionContext) {
 		try {

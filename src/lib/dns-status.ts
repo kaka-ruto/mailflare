@@ -25,7 +25,7 @@ export function summariseDns(
 				: type === "routing-missing"
 					? routingMissing
 					: sendingRecords;
-		return [...new Set(list.map((r) => r.type).filter(Boolean))] as string[];
+		return Array.from(new Set(list.map((r) => r.type).filter(Boolean))) as string[];
 	};
 
 	return {

@@ -39,6 +39,8 @@ export async function dispatchWebhooks(
 			const signature = await signPayload(hook.secret, body);
 			const res = await fetch(hook.url, {
 				method: "POST",
+				redirect: "manual",
+				signal: AbortSignal.timeout(10_000),
 				headers: {
 					"Content-Type": "application/json",
 					"X-Email-Platform-Signature": signature,

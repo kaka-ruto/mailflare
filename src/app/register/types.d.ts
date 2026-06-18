@@ -1,4 +1,5 @@
 export type SetupStatus = {
+	hasAdminAccount: boolean;
 	hasPrimaryDomain: boolean;
 	primaryDomain?: { hostname: string } | null;
 };

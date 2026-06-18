@@ -3,10 +3,18 @@ import { getDb } from "@/db";
 import { messageBodies, messages } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
-import { resolveInboundAddress } from "@/lib/email/routing";
+import { resolveInboundAddress, resolveInboxRuleDestination } from "@/lib/email/routing";
 import { dispatchWebhooks } from "@/lib/email/webhooks";
 import { getMessageContactNames, upsertContactFromAddress } from "@/lib/contacts/service";
 import { formatEmailAddress, getEmailAddress } from "@/lib/email/address";
+import { getMailboxAccessLevel } from "@/lib/mailboxes/access";
+import { listMessageAttachments, storeMessageAttachments } from "@/lib/email/attachments";
+import { getUnsubscribeUrlFromRawR2Key } from "@/lib/email/unsubscribe";
+import type { SessionUser } from "@/lib/auth/types";
+import {
+	getMailboxNotificationUserIds,
+	notifyUsersOfNewMessage,
+} from "@/lib/realtime/utils";
 
 export type InboundQueueMessage = {
 	from: string;
@@ -55,34 +63,60 @@ export async function processInboundMessage(
 		? parsed.toAddr
 		: mailboxHeader;
 	const fromAddr = parsed.fromAddr ?? payload.from;
+	const destination = await resolveInboxRuleDestination(db, {
+		mailboxId: decision.mailbox.mailboxId,
+		toAddress: toAddr,
+		fromAddress: fromAddr,
+		subject: parsed.subject,
+		content: [parsed.text, parsed.html, snippet].filter(Boolean).join(" "),
+	});
 	await upsertContactFromAddress(env, {
 		userId: decision.mailbox.userId,
 		address: fromAddr,
 		source: "inbound",
 	});
 
-	await db.insert(messages).values({
-		id: messageId,
-		userId: decision.mailbox.userId,
-		mailboxId: decision.mailbox.mailboxId,
-		direction: "inbound",
-		providerMessageId: parsed.messageId,
-		fromAddr,
-		toAddr,
-		subject: parsed.subject,
-		snippet,
-		status: "received",
-		threadId: parsed.messageId,
-	});
+	try {
+		await db.insert(messages).values({
+			id: messageId,
+			userId: decision.mailbox.userId,
+			mailboxId: decision.mailbox.mailboxId,
+			folderId: destination.folderId,
+			direction: "inbound",
+			providerMessageId: parsed.messageId,
+			fromAddr,
+			toAddr,
+			subject: parsed.subject,
+			snippet,
+			status: destination.status,
+			threadId: parsed.messageId,
+		});
 
-	await db.insert(messageBodies).values({
-		id: newId(),
+		await db.insert(messageBodies).values({
+			id: newId(),
+			messageId,
+			textBody: parsed.text,
+			htmlBody: parsed.html,
+			rawR2Key: payload.rawR2Key,
+		});
+		await storeMessageAttachments(env, messageId, parsed.attachments, { validate: false });
+	} catch (error) {
+		await db.delete(messages).where(eq(messages.id, messageId));
+		throw error;
+	}
+
+	const notificationUserIds = await getMailboxNotificationUserIds(
+		env,
+		decision.mailbox.mailboxId,
+		decision.mailbox.userId,
+	);
+	await notifyUsersOfNewMessage(env, notificationUserIds, {
+		type: "new_message",
 		messageId,
-		textBody: parsed.text,
-		htmlBody: parsed.html,
-		rawR2Key: payload.rawR2Key,
+		mailboxId: decision.mailbox.mailboxId,
+		from: fromAddr,
+		subject: parsed.subject,
 	});
-
 	await dispatchWebhooks(env, decision.mailbox.userId, "message.inbound", {
 		messageId,
 		from: fromAddr,
@@ -120,5 +154,24 @@ export async function getMessageWithBody(env: CloudflareEnv, userId: string, mes
 		.where(eq(messageBodies.messageId, messageId))
 		.limit(1);
 	const contactNames = await getMessageContactNames(env, userId, message.fromAddr, message.toAddr);
-	return { message: { ...message, ...contactNames }, body };
+	const attachments = await listMessageAttachments(env, messageId);
+	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, body?.rawR2Key ?? null);
+	return { message: { ...message, ...contactNames }, body, attachments, unsubscribeUrl };
+}
+
+export async function getMessageWithBodyForUser(env: CloudflareEnv, user: SessionUser, messageId: string) {
+	const db = getDb(env);
+	const [message] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
+	if (!message?.mailboxId) return null;
+	const access = await getMailboxAccessLevel(db, user, message.mailboxId);
+	if (!access?.canRead) return null;
+	const [body] = await db
+		.select()
+		.from(messageBodies)
+		.where(eq(messageBodies.messageId, messageId))
+		.limit(1);
+	const contactNames = await getMessageContactNames(env, user.id, message.fromAddr, message.toAddr);
+	const attachments = await listMessageAttachments(env, messageId);
+	const unsubscribeUrl = await getUnsubscribeUrlFromRawR2Key(env, body?.rawR2Key ?? null);
+	return { message: { ...message, ...contactNames }, body, attachments, unsubscribeUrl };
 }

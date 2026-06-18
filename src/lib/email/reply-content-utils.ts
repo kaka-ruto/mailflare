@@ -1,46 +1,57 @@
-import type { ReplyContentParts, QuotedEmailContent } from "./reply-content-types";
+import type {
+	PreviousMessageDirection,
+	ReplyContentParts,
+	QuotedEmailContent,
+	SplitReplyContentOptions,
+} from "./reply-content-types";
+import { normalizeEmailAddress } from "./address";
 
 const ORIGINAL_MESSAGE_RE = /^-{2,}\s*Original Message\s*-{2,}$/i;
 const UNDERSCORE_SEPARATOR_RE = /^_{8,}$/;
 const WROTE_RE = /^On\s+(.+?)\s+wrote:\s*$/i;
 const HEADER_RE = /^(From|To|Cc|Subject|Date|Sent):\s*(.*)$/i;
 
-export function splitRepliedEmailContent(content: string | null | undefined): ReplyContentParts {
+export function splitRepliedEmailContent(
+	content: string | null | undefined,
+	options: SplitReplyContentOptions = {},
+): ReplyContentParts {
 	const lines = normalizeContent(content).split("\n");
 	const originalMessageIndex = lines.findIndex((line) => ORIGINAL_MESSAGE_RE.test(line.trim()));
 	if (originalMessageIndex >= 0) {
-		return splitOriginalMessage(lines, originalMessageIndex);
+		return splitOriginalMessage(lines, originalMessageIndex, options);
 	}
 
 	const underscoreSeparatorIndex = lines.findIndex((line) => UNDERSCORE_SEPARATOR_RE.test(line.trim()));
 	if (underscoreSeparatorIndex >= 0) {
-		return splitSeparatorQuotedContent(lines, underscoreSeparatorIndex);
+		return splitSeparatorQuotedContent(lines, underscoreSeparatorIndex, options);
 	}
 
 	const wroteIndex = lines.findIndex((line) => WROTE_RE.test(line.trim()));
 	if (wroteIndex >= 0) {
 		const markerLine = lines[wroteIndex]?.trim() ?? "";
+		const quotedLines = stripSingleQuotePrefix(lines.slice(wroteIndex + 1));
 		return {
 			latestContent: trimEmptyLines(lines.slice(0, wroteIndex)).join("\n").trim(),
-			quotedContent: [
-				{
-					dateLine: getWroteDateLine(markerLine),
-					content: stripQuotePrefixes(lines.slice(wroteIndex + 1)).join("\n").trim(),
-				},
-			].filter(hasQuotedContent),
+			quotedContent: buildQuotedContent(
+				quotedLines,
+				getWroteDateLine(markerLine),
+				getPreviousMessageDirection(getWroteAddress(markerLine), options.ownAddress),
+				options,
+			),
 		};
 	}
 
 	const quoteIndex = lines.findIndex((line) => line.trim().startsWith(">"));
 	if (quoteIndex >= 0) {
+		const quotedLines = stripSingleQuotePrefix(lines.slice(quoteIndex));
 		return {
 			latestContent: trimEmptyLines(lines.slice(0, quoteIndex)).join("\n").trim(),
-			quotedContent: [
-				{
-					dateLine: "Previous message",
-					content: stripQuotePrefixes(lines.slice(quoteIndex)).join("\n").trim(),
-				},
-			].filter(hasQuotedContent),
+			quotedContent: buildQuotedContent(
+				quotedLines,
+				"Unknown time",
+				"received",
+				options,
+			),
 		};
 	}
 
@@ -64,7 +75,11 @@ export function htmlToReadableText(html: string | null | undefined): string {
 		.replace(/&#39;/g, "'");
 }
 
-function splitOriginalMessage(lines: string[], markerIndex: number): ReplyContentParts {
+function splitOriginalMessage(
+	lines: string[],
+	markerIndex: number,
+	options: SplitReplyContentOptions,
+): ReplyContentParts {
 	const latestContent = trimEmptyLines(lines.slice(0, markerIndex)).join("\n").trim();
 	const quotedLines = lines.slice(markerIndex + 1);
 	const headers = new Map<string, string>();
@@ -84,25 +99,30 @@ function splitOriginalMessage(lines: string[], markerIndex: number): ReplyConten
 		}
 	}
 
-	const quotedContent: QuotedEmailContent[] = [
-		{
-			dateLine: headers.get("date") ?? headers.get("sent") ?? "Previous message",
-			content: stripQuotePrefixes(quotedLines.slice(contentStartIndex)).join("\n").trim(),
-		},
-	].filter(hasQuotedContent);
+	const quotedContent = buildQuotedContent(
+		stripSingleQuotePrefix(quotedLines.slice(contentStartIndex)),
+		headers.get("date") ?? headers.get("sent") ?? "Unknown time",
+		getPreviousMessageDirection(headers.get("from"), options.ownAddress),
+		options,
+	);
 
 	return { latestContent, quotedContent };
 }
 
-function splitSeparatorQuotedContent(lines: string[], separatorIndex: number): ReplyContentParts {
+function splitSeparatorQuotedContent(
+	lines: string[],
+	separatorIndex: number,
+	options: SplitReplyContentOptions,
+): ReplyContentParts {
+	const quotedLines = trimEmptyLines(lines.slice(separatorIndex + 1));
 	return {
 		latestContent: trimEmptyLines(lines.slice(0, separatorIndex)).join("\n").trim(),
-		quotedContent: [
-			{
-				dateLine: "Previous message",
-				content: trimEmptyLines(lines.slice(separatorIndex + 1)).join("\n").trim(),
-			},
-		].filter(hasQuotedContent),
+		quotedContent: buildQuotedContent(
+			quotedLines,
+			getHeaderValue(quotedLines, "sent") ?? getHeaderValue(quotedLines, "date") ?? "Unknown time",
+			getPreviousMessageDirection(getHeaderValue(quotedLines, "from"), options.ownAddress),
+			options,
+		),
 	};
 }
 
@@ -112,15 +132,19 @@ function getWroteDateLine(line: string): string {
 	return rawDateLine
 		.replace(/,\s*["']?[^,<"]+["']?\s*<[^>]+>\s*$/i, "")
 		.replace(/\b([0-9]{1,2}:[0-9]{2}\s?(?:AM|PM))(?:,?\s+.*)?$/i, "$1")
-		.trim() || "Previous message";
+		.trim() || "Unknown time";
+}
+
+function getWroteAddress(line: string): string | undefined {
+	return line.match(/<([^>]+@[^>]+)>/)?.[1];
 }
 
 function normalizeContent(content: string | null | undefined): string {
 	return (content ?? "").replace(/\r\n?/g, "\n");
 }
 
-function stripQuotePrefixes(lines: string[]): string[] {
-	return trimEmptyLines(lines.map((line) => line.replace(/^\s*>+\s?/, "")));
+function stripSingleQuotePrefix(lines: string[]): string[] {
+	return trimEmptyLines(lines.map((line) => line.replace(/^\s*>\s?/, "")));
 }
 
 function trimEmptyLines(lines: string[]): string[] {
@@ -134,5 +158,47 @@ function trimEmptyLines(lines: string[]): string[] {
 }
 
 function hasQuotedContent(quotedContent: QuotedEmailContent): boolean {
-	return quotedContent.content.trim().length > 0;
+	return (
+		quotedContent.content.trim().length > 0 ||
+		quotedContent.quotedContent.length > 0
+	);
+}
+
+function buildQuotedContent(
+	lines: string[],
+	dateLine: string,
+	direction: PreviousMessageDirection,
+	options: SplitReplyContentOptions,
+): QuotedEmailContent[] {
+	const rawContent = trimEmptyLines(lines).join("\n").trim();
+	if (!rawContent) return [];
+
+	const nested = splitRepliedEmailContent(rawContent, options);
+	const quotedContent: QuotedEmailContent = {
+		dateLine,
+		direction,
+		content: nested.latestContent,
+		quotedContent: nested.quotedContent,
+	};
+
+	return hasQuotedContent(quotedContent) ? [quotedContent] : [];
+}
+
+function getPreviousMessageDirection(
+	from: string | undefined,
+	ownAddress: string | undefined,
+): PreviousMessageDirection {
+	if (!from || !ownAddress) return "received";
+	const fromAddress = normalizeEmailAddress(
+		from.match(/<([^>]+)>/)?.[1] ?? from,
+	);
+	return fromAddress === normalizeEmailAddress(ownAddress) ? "sent" : "received";
+}
+
+function getHeaderValue(lines: string[], name: string): string | undefined {
+	for (const line of lines) {
+		const match = line.match(HEADER_RE);
+		if (match?.[1].toLowerCase() === name) return match[2].trim();
+	}
+	return undefined;
 }

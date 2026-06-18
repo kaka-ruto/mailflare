@@ -1,12 +1,19 @@
 import { NextResponse } from "next/server";
+import { hasAdminAccount } from "@/lib/auth/setup";
 import { getEnv } from "@/lib/cloudflare";
 import { getPrimaryDomain } from "@/lib/user";
 
 export async function GET() {
 	const env = getEnv();
-	const domain = await getPrimaryDomain(env);
+	const [adminAccountExists, domain] = await Promise.all([
+		hasAdminAccount(env),
+		getPrimaryDomain(env),
+	]);
 	return NextResponse.json({
+		hasAdminAccount: adminAccountExists,
 		hasPrimaryDomain: !!domain,
-		primaryDomain: domain ? { id: domain.id, hostname: domain.hostname } : null,
+		primaryDomain: domain ? { hostname: domain.hostname } : null,
+	}, {
+		headers: { "Cache-Control": "no-store" },
 	});
 }

@@ -1,8 +1,22 @@
 "use client";
 
-import type { AuthFetchOptions, AuthSessionResponse } from "./client-types";
+import type {
+	AuthFetchOptions,
+	AuthSessionChangedDetail,
+	AuthSessionResponse,
+} from "./client-types";
 
 const SESSION_STORAGE_KEY = "mailflare-session-token";
+export const AUTH_SESSION_CHANGED_EVENT = "mailflare:auth-session-changed";
+
+function dispatchAuthSessionChanged(authenticated: boolean): void {
+	if (typeof window === "undefined") return;
+	window.dispatchEvent(
+		new CustomEvent<AuthSessionChangedDetail>(AUTH_SESSION_CHANGED_EVENT, {
+			detail: { authenticated },
+		}),
+	);
+}
 
 export function getClientSessionToken(): string | null {
 	if (typeof window === "undefined") return null;
@@ -10,11 +24,14 @@ export function getClientSessionToken(): string | null {
 }
 
 export function setClientSessionToken(token: string): void {
+	const previousToken = localStorage.getItem(SESSION_STORAGE_KEY);
 	localStorage.setItem(SESSION_STORAGE_KEY, token);
+	if (previousToken !== token) dispatchAuthSessionChanged(true);
 }
 
 export function clearClientSessionToken(): void {
 	localStorage.removeItem(SESSION_STORAGE_KEY);
+	dispatchAuthSessionChanged(false);
 }
 
 export function getAuthHeaders(headers?: HeadersInit): Headers {
