@@ -5,7 +5,7 @@ A self-hosted, AI-powered email inbox with custom domains, powered by Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare-team)
 
-<video src="https://r2.mailflare.co/demo.mp4" controls width="800"></video>
+<video src="./docs/demo.mp4" controls width="800"></video>
 
 
 ### Roadmap
