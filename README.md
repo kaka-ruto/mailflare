@@ -5,7 +5,7 @@ A self-hosted, AI-powered email inbox with custom domains, powered by Cloudflare
 
 [![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare-team)
 
-![](/screenshot.png)
+<video src="https://r2.mailflare.co/demo.mp4" controls width="800"></video>
 
 
 ### Roadmap
@@ -20,9 +20,9 @@ A self-hosted, AI-powered email inbox with custom domains, powered by Cloudflare
 - [x] Inbound and outbound attachments stored in R2 with authenticated downloads.
 - [x] Real-time new-email updates and in-app notifications over WebSockets.
 - [x] Search, filtering, and richer mailbox/folder counts.
+- [x] Attachment support and richer compose formatting.
 - [ ] Advanced routing rules for catch-all addresses, forwarding, reject/block rules, and priorities.
 - [ ] Webhook management UI and delivery retry visibility.
-- [ ] Attachment support and richer compose formatting.
 
 #### Email agent
 
