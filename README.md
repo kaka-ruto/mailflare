@@ -3,9 +3,9 @@
 
 A self-hosted, AI-powered email inbox with custom domains, powered by Cloudflare
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare-team)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare)
 
-<video src="./docs/demo.mp4" controls width="800"></video>
+![](/screenshot.png)
 
 
 ### Roadmap
