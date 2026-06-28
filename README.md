@@ -117,9 +117,9 @@ curl -X POST http://localhost:3000/api/seed
 ### One-click Cloudflare deploy
 
 
-[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare-team)
+[![Deploy to Cloudflare](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/hieunc229/mailflare)
 
-Publish this repository to GitHub, then replace `hieunc229/mailflare-team` in the button at the top of this README with the public repository path.
+Publish this repository to GitHub, then replace `hieunc229/mailflare` in the button at the top of this README with the public repository path.
 
 The deploy flow reads `wrangler.jsonc`, provisions the Worker bindings, prompts for values from `.dev.vars.example`, runs D1 migrations, builds the OpenNext Worker, and deploys it.
 
@@ -135,7 +135,7 @@ Required setup values:
 
 The admin overview includes an **Update Mailflare** button. `POST /api/admin/update` dispatches
 `.github/workflows/update.yml` in the installation repository. The workflow fetches the latest
-changes from the default branch of `hieunc229/mailflare-team`, merges them into the installation
+changes from the default branch of `hieunc229/mailflare`, merges them into the installation
 branch, applies pending D1 migrations, and pushes the updated source. It does not build or deploy
 the Worker.
 
@@ -166,7 +166,7 @@ its own workflow until it can successfully read the upstream repository.
 Optional GitHub Actions repository variables:
 
 - `MAILFLARE_UPSTREAM_REPOSITORY` — upstream source in `owner/repository` format. Defaults to
-  `hieunc229/mailflare-team`.
+  `hieunc229/mailflare`.
 - `MAILFLARE_UPSTREAM_BRANCH` — upstream branch to merge. Defaults to `main`.
 
 The workflow resolves the `mailflare` D1 database ID at runtime and applies migrations before
