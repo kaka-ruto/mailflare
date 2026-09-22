@@ -96,7 +96,7 @@ async function githubRequest<T>(
   if (response.statusText === "Forbidden") {
     return {
       response,
-      data: { error: response.statusText } as any,
+      data: { error: response.statusText } as unknown as T,
     };
   }
 

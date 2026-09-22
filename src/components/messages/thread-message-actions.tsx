@@ -43,7 +43,8 @@ export function ThreadMessageActions({
 		setPending(true);
 		setError(null);
 		try {
-			setStarred(await toggleMessageStar(message.id));
+			const starResult = await toggleMessageStar(message.id);
+			setStarred(starResult.starred);
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Unable to update star");
 		} finally {
