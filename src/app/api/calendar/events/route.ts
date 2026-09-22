@@ -7,6 +7,7 @@ import { getEnv } from "@/lib/cloudflare";
 import { newId } from "@/lib/ids";
 import { sendEmail } from "@/lib/email/send";
 import { createCalendarInvitation } from "@/lib/calendar/utils";
+import { normalizeAttachmentContent } from "@/lib/email/attachments";
 import type { CalendarEventInput } from "./types";
 
 export async function GET(request: Request) {
@@ -31,7 +32,7 @@ export async function POST(request: Request) {
 	await getDb(env).insert(calendarEvents).values(event);
 	if (attendees.length && input.mailboxId) {
 		const calendarFile = createCalendarInvitation({ ...event, uid: event.id });
-		await Promise.all(attendees.map((to) => sendEmail(env, { userId: user.id, mailboxId: input.mailboxId!, from: input.from ?? "", to, subject: `Invitation: ${event.title}`, text: event.description || `You are invited to ${event.title}.`, attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: calendarFile }] })));
+		await Promise.all(attendees.map((to) => sendEmail(env, { userId: user.id, mailboxId: input.mailboxId!, from: input.from ?? "", to, subject: `Invitation: ${event.title}`, text: event.description || `You are invited to ${event.title}.`, attachments: [{ filename: "invite.ics", type: "text/calendar; charset=utf-8", content: normalizeAttachmentContent(calendarFile) }] })));
 	}
 	return NextResponse.json({ event });
 }

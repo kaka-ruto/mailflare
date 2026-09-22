@@ -384,7 +384,7 @@ export function RegisterClient() {
 									Replace existing MX records
 								</span>
 								<span className="mt-1 block text-xs leading-5">
-									This deletes the current mail provider's MX records and replaces them with Cloudflare Email Routing. The previous provider will stop receiving mail.
+									This deletes the current mail provider&apos;s MX records and replaces them with Cloudflare Email Routing. The previous provider will stop receiving mail.
 								</span>
 							</span>
 						</label>

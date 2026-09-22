@@ -17,6 +17,14 @@ const eslintConfig = [
 	},
 	...nextCoreWebVitals,
 	...nextTypescript,
+	{
+		rules: {
+			"react-hooks/set-state-in-effect": "warn",
+			"react-hooks/refs": "warn",
+			"react-hooks/purity": "warn",
+			"react-hooks/preserve-manual-memoization": "warn",
+		},
+	},
 ];
 
 export default eslintConfig;

@@ -33,7 +33,7 @@ export default function CalendarPage() {
       `/api/calendar/events?start=${start.toISOString()}&end=${end.toISOString()}`,
     )
       .then((response) => response.json())
-      .then((data) => setEvents(data.events ?? []));
+      .then((data) => setEvents((data as { events?: CalendarEvent[] }).events ?? []));
   }, []);
   async function addEvent() {
     setPendingAction("save");
@@ -57,7 +57,7 @@ export default function CalendarPage() {
         }),
       },
     );
-    const data = await response.json();
+    const data = (await response.json()) as { event: CalendarEvent };
     if (response.ok) {
       setEvents((items) =>
         editing
