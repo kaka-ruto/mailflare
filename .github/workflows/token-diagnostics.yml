@@ -1,0 +1,56 @@
+name: Token Diagnostics
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Probe Cloudflare API permissions
+        env:
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -uo pipefail
+
+          probe() {
+            local label="$1"
+            local url="$2"
+            local out code
+            out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" "$url" 2>&1)" || {
+              printf '%-38s CURL_ERROR %s\n' "$label" "$out"
+              return
+            }
+            code="$(printf '%s' "$out" | tail -n1)"
+            body="$(printf '%s' "$out" | sed '$d')"
+            summary="$(printf '%s' "$body" | jq -r \
+              'if .success == true then "success count=\((.result // []) | if type=="array" then length else "obj" end)"
+               elif (.errors | type)=="array" and (.errors|length)>0 then "ERR code=\(.errors[0].code) \(.errors[0].message)"
+               else "HTTP body=" + (tostring | .[0:160]) end' 2>/dev/null || printf 'unparsable')"
+            printf '%-38s HTTP %s  %s\n' "$label" "$code" "$summary"
+          }
+
+          echo "== token =="
+          probe "tokens/verify" "https://api.cloudflare.com/client/v4/user/tokens/verify"
+          echo "== workers =="
+          probe "workers/services list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/services"
+          probe "workers/scripts list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/scripts"
+          probe "mailflare script settings" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/scripts/mailflare/settings"
+          echo "== d1 =="
+          probe "d1 databases list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database"
+          probe "d1 get 1accbf1b (config id)" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/1accbf1b-9cdf-4538-92b9-6d1bff1be392"
+          probe "d1 lookup by name mailflare" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/d1/database/mailflare?fields=uuid,name"
+          echo "== r2 / queues / do =="
+          probe "r2 buckets list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/r2/buckets"
+          probe "queues list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/queues"
+          probe "durable objects list" "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/durable-objects"
+          echo "== zone =="
+          probe "zones?name=kawibot.com" "https://api.cloudflare.com/client/v4/zones?name=kawibot.com"
+          echo "== existing worker bindings (summary) =="
+          curl -sS -H "Authorization: Bearer ${CF_API_TOKEN}" \
+            "https://api.cloudflare.com/client/v4/accounts/${CF_ACCOUNT_ID}/workers/scripts/mailflare/settings" \
+            | jq -c '{success, errors, bindings: [.bindings[]? | {type, name, id, namespace_id, queue_name, bucket_name, database_name}]}'
