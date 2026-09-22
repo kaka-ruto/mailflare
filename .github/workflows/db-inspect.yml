@@ -29,7 +29,7 @@ jobs:
         run: |
           q() {
             echo "== $1 =="
-            npx wrangler d1 query mailflare --remote --json --command "$2" || echo "(query failed)"
+            npx wrangler d1 execute mailflare --remote --json --command "$2" || echo "(query failed)"
             echo
           }
 
