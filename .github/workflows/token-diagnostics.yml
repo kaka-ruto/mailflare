@@ -15,25 +15,38 @@ jobs:
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
-          set -uo pipefail
           base="https://api.cloudflare.com/client/v4"
 
           probe() {
-            local label="$1" url="$2" out code body summary
-            out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" "$url" 2>&1)" || {
-              printf '%-38s CURL_ERROR %s\n' "$label" "$out"; return; }
-            code="$(printf '%s' "$out" | tail -n1)"
-            body="$(printf '%s' "$out" | sed '$d')"
-            summary="$(printf '%s' "$body" | jq -r \
-              'if .success == true then "success"
-               elif (.errors | type)=="array" and (.errors|length)>0 then "ERR code=\(.errors[0].code) \(.errors[0].message)"
-               else "HTTP body=" + (tostring | .[0:160]) end' 2>/dev/null || printf 'unparsable')"
+            local label="$1" url="$2" out code body summary slug
+            slug="$(printf '%s' "$label" | sed 's/[^a-zA-Z0-9]/_/g; s/__*/_/g; s/_$//')"
+            if out="$(curl -sS -w '\n%{http_code}' -H "Authorization: Bearer ${CF_API_TOKEN}" -H "Content-Type: application/json" "$url" 2>&1)"; then
+              code="$(printf '%s' "$out" | tail -n1)"
+              body="$(printf '%s' "$out" | sed '$d')"
+              summary="$(printf '%s' "$body" | jq -r \
+                'if .success == true then "success"
+                 elif (.errors | type)=="array" and (.errors|length)>0 then "ERR code=\(.errors[0].code) \(.errors[0].message)"
+                 else "HTTP body=" + (tostring | .[0:160]) end' 2>/dev/null || printf 'unparsable')"
+            else
+              code="CURL"; body="$out"; summary="$out"
+            fi
             printf '%-38s HTTP %s  %s\n' "$label" "$code" "$summary"
-            printf '%s\n' "$body" > "/tmp/$(printf '%s' "$label" | tr -c 'a-zA-Z0-9' '_').json"
+            printf '%s' "$body" > "/tmp/${slug}.json"
+          }
+
+          show() {
+            local label="$1" filter="$2" slug
+            slug="$(printf '%s' "$label" | sed 's/[^a-zA-Z0-9]/_/g; s/__*/_/g; s/_$//')"
+            echo "== ${label} =="
+            if [ -f "/tmp/${slug}.json" ]; then
+              jq -c "$filter" "/tmp/${slug}.json" 2>/dev/null || echo "(unparsable)"
+            else
+              echo "(no file)"
+            fi
           }
 
           echo "== token / workers =="
-          probe "tokens/verify" "$base/user/tokens/verify"
+          probe "tokens verify" "$base/user/tokens/verify"
           probe "workers subdomain" "$base/accounts/${CF_ACCOUNT_ID}/workers/subdomain"
           probe "mailflare service" "$base/accounts/${CF_ACCOUNT_ID}/workers/services/mailflare"
           probe "mailflare settings" "$base/accounts/${CF_ACCOUNT_ID}/workers/scripts/mailflare/settings"
@@ -43,30 +56,26 @@ jobs:
           probe "r2 buckets" "$base/accounts/${CF_ACCOUNT_ID}/r2/buckets"
           probe "queues" "$base/accounts/${CF_ACCOUNT_ID}/queues"
           echo "== zone =="
-          probe "zones kawibot.com" "$base/zones?name=kawibot.com"
-          zone_id="$(jq -r '.result[0].id // empty' /tmp/zones_kawibot_com_json.json 2>/dev/null || true)"
+          probe "zones kawibot com" "$base/zones?name=kawibot.com"
+          zone_id="$(jq -r '.result[0].id // empty' /tmp/zones_kawibot_com.json 2>/dev/null || true)"
           echo "zone_id=${zone_id}"
           if [ -n "${zone_id}" ]; then
             probe "zone dns records" "$base/zones/${zone_id}/dns_records?per_page=100"
             probe "zone workers domains" "$base/zones/${zone_id}/workers/domains"
             probe "zone workers routes" "$base/zones/${zone_id}/workers/routes"
             probe "zone email routing rules" "$base/zones/${zone_id}/email/routing/rules"
-            probe "zone email routing addresses" "$base/zones/${zone_id}/email/routing/address"
+            probe "zone email routing catchall" "$base/zones/${zone_id}/email/routing/catch_all"
+            probe "zone email routing address" "$base/zones/${zone_id}/email/routing/address"
           fi
 
-          echo "== bindings of deployed mailflare worker =="
-          jq -c '{success, bindings: [.result.bindings[]? | {type, name, id, namespace_id, queue_name, bucket_name, database_name}], env: (.result.env // null | if . then (keys) else null end)}' /tmp/mailflare_settings_json.json
-          echo "== r2 buckets =="
-          jq -c '.' /tmp/r2_buckets_json.json
-          echo "== queues =="
-          jq -c '[.result[]? | {queue_name, created_on}]' /tmp/queues_json.json
-          echo "== workers services =="
-          jq -c '[.result[]? | {id, created_on, modified_on}]' /tmp/mailflare_service_json.json 2>/dev/null || true
-          echo "== dns records =="
-          jq -c '[.result[]? | {type, name, content, proxied}]' /tmp/zone_dns_records_json.json 2>/dev/null || true
-          echo "== workers domains =="
-          jq -c '.' /tmp/zone_workers_domains_json.json 2>/dev/null || true
-          echo "== workers subdomain =="
-          jq -c '.' /tmp/workers_subdomain_json.json 2>/dev/null || true
-          echo "== email routing rules =="
-          jq -c '{success, errors, rules: [.result[]? | {name, enabled, priority, action: .action.type, matcher: .matcher.type, value}]}' /tmp/zone_email_routing_rules_json.json 2>/dev/null || true
+          show "mailflare settings" '{success, bindings: [.result.bindings[]? | {type, name, id, namespace_id, queue_name, bucket_name, database_name}], env: (.result.env // null | if . then (keys) else null end)}'
+          show "r2 buckets" '{success, buckets: [.result.buckets[]? | .name]}'
+          show "queues" '{success, queues: [.result[]? | .queue_name]}'
+          show "workers subdomain" '{success, subdomain: .result.subdomain}'
+          show "mailflare service" '{success, env: (.result.env // null | if . then keys else null end), created_on: .result.created_on, modified_on: .result.modified_on}'
+          show "zone dns records" '{success, records: [.result[]? | {type, name, content, proxied}]}'
+          show "zone workers domains" '{success, domains: [.result[]? | {hostname, service, environment, id}]}'
+          show "zone workers routes" '{success, routes: [.result[]? | {pattern, script}]}'
+          show "zone email routing rules" '{success, errors, rules: [.result[]? | {name, enabled, priority, action: .action.type, value: (.action.value // null), matcher: .matcher.type, matcherValue: (.matcher.value // null)}]}'
+          show "zone email routing catchall" '{success, errors, result}'
+          show "zone email routing address" '{success, errors, result}'
