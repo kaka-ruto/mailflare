@@ -1,0 +1,41 @@
+name: DB Inspect
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.23.2
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Query D1 (read-only)
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          q() {
+            echo "== $1 =="
+            npx wrangler d1 query mailflare --remote --json --command "$2" || echo "(query failed)"
+            echo
+          }
+
+          q "users" "SELECT id, email, name, role, disabled, can_manage_mailboxes, created_by_user_id, created_at FROM users ORDER BY created_at"
+          q "domains" "SELECT id, hostname, status, routing_enabled, sending_enabled FROM domains ORDER BY created_at"
+          q "mailboxes" "SELECT m.id, d.hostname, m.local_part, m.display_name, m.type, m.disabled, u.email AS owner FROM mailboxes m JOIN domains d ON d.id = m.domain_id JOIN users u ON u.id = m.user_id ORDER BY d.hostname, m.local_part"
+          q "colleague mailbox message counts" "SELECT d.hostname, m.local_part, m.disabled, COUNT(msg.id) AS message_count FROM mailboxes m JOIN domains d ON d.id = m.domain_id LEFT JOIN messages msg ON msg.mailbox_id = m.id WHERE m.local_part IN ('karisa','sagini','wadende') GROUP BY d.hostname, m.local_part, m.disabled"
+          q "message totals" "SELECT COUNT(*) AS total_messages, SUM(CASE WHEN mailbox_id IS NULL THEN 1 ELSE 0 END) AS orphaned FROM messages"
+          q "mailbox access" "SELECT u.email, d.hostname, m.local_part, ma.permission FROM mailbox_access ma JOIN users u ON u.id = ma.user_id JOIN mailboxes m ON m.id = ma.mailbox_id JOIN domains d ON d.id = m.domain_id ORDER BY u.email"
