@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ProgressiveAvatarImage } from "@/components/progressive-avatar-image";
 import { CONTACT_AVATAR_CHANGED_EVENT } from "@/lib/contacts/avatar-client";
 import { normalizeEmailAddress } from "@/lib/email/address";
+import { getAvatarColorStyle } from "@/lib/avatar-colors";
 import { cn } from "@/lib/utils";
 import type { ContactAvatarProps } from "./contact-avatar-types";
 import {
@@ -58,11 +60,10 @@ export function ContactAvatar({
 
 	if (avatarUrl && !imageFailed) {
 		return (
-			// eslint-disable-next-line @next/next/no-img-element
-			<img
+			<ProgressiveAvatarImage
 				src={avatarUrl}
 				alt=""
-				className={cn("h-8 w-8 shrink-0 rounded-full border border-neutral-200 object-cover", className)}
+				className={cn("h-9 w-9 shrink-0 rounded-full object-cover", className)}
 				onError={() => {
 					if (managedAvatarUrl) setImageFailed(true);
 					else if (managedAvatar) setManagedAvatar(false);
@@ -74,7 +75,8 @@ export function ContactAvatar({
 
 	return (
 		<span
-			className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-semibold text-neutral-700", className)}
+			className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-neutral-200 text-sm font-semibold text-neutral-700", className)}
+			style={getAvatarColorStyle(normalizeEmailAddress(address) || name)}
 			aria-hidden
 		>
 			{getContactAvatarInitial(name, address)}
