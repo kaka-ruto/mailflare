@@ -23,6 +23,7 @@ export type AccountSettingsResponse = {
 		resetEmail: string | null;
 		forwardingEmail: string | null;
 		canForwardEmail: boolean;
+		timeZone: string | null;
 	};
 	error?: unknown;
 };
@@ -107,6 +108,7 @@ export type ProfileAvatarFormProps = {
 export type CurrentMailboxFormResponse = {
 	mailbox?: {
 		id: string;
+		domainId: string;
 		localPart: string;
 		hostname: string;
 		displayName: string | null;

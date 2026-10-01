@@ -19,6 +19,15 @@ const eslintConfig = [
 	},
 	...nextCoreWebVitals,
 	...nextTypescript,
+	{
+		// React Compiler advisories: upstream code does not satisfy these yet.
+		rules: {
+			"react-hooks/set-state-in-effect": "warn",
+			"react-hooks/refs": "warn",
+			"react-hooks/purity": "warn",
+			"react-hooks/preserve-manual-memoization": "warn",
+		},
+	},
 ];
 
 export default eslintConfig;

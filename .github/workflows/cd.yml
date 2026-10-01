@@ -29,14 +29,10 @@ jobs:
         run: npm ci
 
       - name: Build Worker
-        run: |
-          npm run db:bundle
-          npx opennextjs-cloudflare build
+        run: npm run build
 
       - name: Deploy to Cloudflare
         uses: cloudflare/wrangler-action@v3
-        env:
-          OPEN_NEXT_DEPLOY: "true"
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
