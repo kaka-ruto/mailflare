@@ -26,6 +26,7 @@ export function ThreadMessageActions({
 	mailboxId,
 	ownAddress,
 	ownAddresses = [],
+	starOnly = false,
 }: ThreadMessageActionsProps) {
 	const { openDraftComposer } = useCompose();
 	const [starred, setStarred] = useState(message.starred);
@@ -40,13 +41,15 @@ export function ThreadMessageActions({
 		: ownAddress;
 
 	useEffect(() => setStarred(message.starred), [message.starred]);
+	useEffect(() => {
+		if (starOnly) setMoreOpen(false);
+	}, [starOnly]);
 
 	async function onToggleStar() {
 		setPending(true);
 		setError(null);
 		try {
-			const starResult = await toggleMessageStar(message.id);
-			setStarred(starResult.starred);
+			setStarred(await toggleMessageStar(message.id));
 		} catch (nextError) {
 			setError(nextError instanceof Error ? nextError.message : "Unable to update star");
 		} finally {
@@ -143,6 +146,8 @@ export function ThreadMessageActions({
 					<Star className={starred ? "h-4 w-4 fill-amber-400 text-amber-400" : "h-4 w-4"} />
 				</Button>
 			</Tooltip>
+			{!starOnly && (
+				<>
 			<Tooltip label="Reply">
 				<Button
 					type="button"
@@ -209,6 +214,8 @@ export function ThreadMessageActions({
 				)}
 			</div>
 			<MessageSourceDialog messageId={message.id} open={sourceOpen} onOpenChange={setSourceOpen} />
+				</>
+			)}
 		</div>
 	);
 }

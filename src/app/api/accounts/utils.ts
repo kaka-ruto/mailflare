@@ -16,9 +16,12 @@ export function listAccountsForAdmin(db: Db) {
 			name: users.name,
 			resetEmail: users.resetEmail,
 			role: users.role,
+			isPrimaryAdmin: users.isPrimaryAdmin,
 			disabled: users.disabled,
 			avatarKey: users.avatarKey,
 			canManageMailboxes: users.canManageMailboxes,
+			canManageDomains: users.canManageDomains,
+			canManageUsers: users.canManageUsers,
 			createdAt: users.createdAt,
 		})
 		.from(users)
@@ -49,9 +52,12 @@ export function accountListItemFromUser(user: {
 	name: string;
 	resetEmail: string | null;
 	role: "admin" | "user";
+	isPrimaryAdmin?: boolean;
 	disabled: boolean;
 	avatarKey?: string | null;
 	canManageMailboxes?: boolean;
+	canManageDomains?: boolean;
+	canManageUsers?: boolean;
 	createdAt: Date;
 }) {
 	return {
@@ -60,9 +66,12 @@ export function accountListItemFromUser(user: {
 		name: user.name,
 		resetEmail: user.resetEmail,
 		role: user.role,
+		isPrimaryAdmin: !!user.isPrimaryAdmin,
 		disabled: user.disabled,
 		hasAvatar: !!user.avatarKey,
 		canManageMailboxes: !!user.canManageMailboxes,
+		canManageDomains: !!user.canManageDomains,
+		canManageUsers: !!user.canManageUsers,
 		createdAt: user.createdAt,
 	};
 }
