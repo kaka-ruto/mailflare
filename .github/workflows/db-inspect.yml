@@ -39,3 +39,10 @@ jobs:
           q "colleague mailbox message counts" "SELECT d.hostname, m.local_part, m.disabled, COUNT(msg.id) AS message_count FROM mailboxes m JOIN domains d ON d.id = m.domain_id LEFT JOIN messages msg ON msg.mailbox_id = m.id WHERE m.local_part IN ('karisa','sagini','wadende') GROUP BY d.hostname, m.local_part, m.disabled"
           q "message totals" "SELECT COUNT(*) AS total_messages, SUM(CASE WHEN mailbox_id IS NULL THEN 1 ELSE 0 END) AS orphaned FROM messages"
           q "mailbox access" "SELECT u.email, d.hostname, m.local_part, ma.permission FROM mailbox_access ma JOIN users u ON u.id = ma.user_id JOIN mailboxes m ON m.id = ma.mailbox_id JOIN domains d ON d.id = m.domain_id ORDER BY u.email"
+          # The Cloudflare dashboard's Tables counter is unreliable and has reported
+          # 0 for a populated database, so read the schema and migration history
+          # directly. `applied` must reach the committed migration count; a shortfall
+          # means live code is ahead of the schema and will fail at runtime.
+          q "table count" "SELECT COUNT(*) AS tables FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE '_cf_%' AND name NOT LIKE 'messages_fts%'"
+          q "applied migrations" "SELECT COUNT(*) AS applied, MAX(name) AS latest FROM d1_migrations"
+          echo "committed migrations on disk: $(ls drizzle/migrations/*.sql | wc -l)"

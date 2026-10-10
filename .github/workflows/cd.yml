@@ -37,3 +37,15 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
+
+      # The Worker ships a migration bundle built from drizzle/migrations, so the
+      # deployed version always expects the full set. Deploying code without its
+      # migrations leaves live features querying tables that do not exist yet,
+      # which surfaces only as background failures (the cron sweep, Drive,
+      # scheduled sends) rather than at deploy time. Applying them here keeps the
+      # schema in step with what is live.
+      - name: Apply pending database migrations
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: npm run db:migrate:remote

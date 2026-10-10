@@ -167,13 +167,13 @@ Make sure `.github/workflows/deploy-update.yml` exists on the installation branc
 
 After the GitHub Action completes successfully, wait for the connected Cloudflare deployment to finish before refreshing Mailflare or applying pending database migrations. The workflow updates the repository first; the new application version is not live until Cloudflare completes its deployment.
 
-Deployment and database migration are separate. After Cloudflare deploys a repository push or an admin-triggered update, open or refresh **Admin settings**. The application update card shows any pending database migrations. Select **Update database** to apply them through the Worker's D1 binding. The same runner initializes a new database during setup.
-
-If the Cloudflare dashboard has a custom deploy command containing `wrangler d1 migrations apply DB --remote`, remove that part and use `npm run deploy`.
+Deployment applies migrations itself. The CD workflow runs `npm run db:migrate:remote` immediately after the Worker deploy succeeds, so the schema is brought up to date in the same run. The **Admin settings** update card still reports pending migrations and can apply them by hand; that path is a recovery route for an installation whose deploy did not run, not the normal one.
 
 Each migration and its `d1_migrations` history entry run in one D1 batch. If a migration fails, its changes are rolled back, the failed filename is shown, and it can be retried after the problem is corrected. Wrangler remains available as a manual recovery tool.
 
-New application releases must remain compatible with the previous schema until an administrator applies their migrations. Prefer additive changes, keep old columns during the transition, and avoid making authentication or the admin settings page depend immediately on a newly added column. Plan a maintenance window for an incompatible schema change.
+Before the deploy applies them, a release may briefly be live against the previous schema, which is why a migration must be additive and remain compatible with the code it is deployed ahead of. Prefer additive changes, keep old columns during the transition, and avoid making authentication or the admin settings page depend immediately on a newly added column. Plan a maintenance window for an incompatible schema change. `tests/migration-coverage.test.mjs` fails CI when a migration creates a table that `BACKUP_TABLES` does not list, which is the other way drift stayed hidden: a new table would be missing from every backup and only surface during a restore.
+
+Do not add `wrangler d1 migrations apply DB --remote` to a Cloudflare dashboard custom deploy command. The CD workflow already owns this step, and a second copy would run it concurrently.
 
 When adding a schema change, create a new uniquely named SQL file in `drizzle/migrations` and do not edit an applied migration. Build and development commands generate the Worker migration bundle from those files. `npm run db:bundle` can generate it explicitly.
 
