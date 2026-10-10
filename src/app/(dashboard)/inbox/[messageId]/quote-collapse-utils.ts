@@ -1,6 +1,8 @@
 export function collapseQuotedEmailHtml(html: string | null, preserveLeadingQuote = false): string | null {
 	if (!html) return null;
-	const document = new DOMParser().parseFromString(html, "text/html");
+	const template = window.document.createElement("template");
+	template.innerHTML = html;
+	const document = { body: template.content, createElement: window.document.createElement.bind(window.document) };
 
 	for (const blockquote of Array.from(document.body.querySelectorAll("blockquote"))) {
 		const introduction = blockquote.previousElementSibling;
@@ -28,5 +30,5 @@ export function collapseQuotedEmailHtml(html: string | null, preserveLeadingQuot
 		details.appendChild(content);
 	}
 
-	return document.body.innerHTML;
+	return template.innerHTML;
 }
