@@ -1,7 +1,6 @@
 export type ProfileFormProps = {
-	initialName: string;
+	accountName: string;
 	initialResetEmail: string;
-	email: string;
 };
 
 export type ProfileFormResponse = {
@@ -20,6 +19,7 @@ export type AccountSettingsResponse = {
 		id: string;
 		email: string;
 		name: string;
+		timeZone: string | null;
 		resetEmail: string | null;
 		forwardingEmail: string | null;
 		canForwardEmail: boolean;

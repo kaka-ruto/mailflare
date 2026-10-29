@@ -10,16 +10,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const outDir = mkdtempSync(join(tmpdir(), "mailflare-migrations-"));
 after(() => rmSync(outDir, { recursive: true, force: true }));
 
-// Tables the backup format deliberately leaves out, mirroring INTERNAL_TABLES in
-// src/lib/backups/export.ts. `d1_migrations` is created by the Worker's own
-// migration runner rather than a migration file, so it never appears below.
-const INTERNAL_TABLES = ["d1_migrations", "jmap_mailbox_revisions"];
-
 await build({
 	stdin: {
 		contents: `
 			export * from "./src/lib/backups/table-groups";
-			export { BACKUP_TABLES } from "./src/lib/backups/export";
+			export { BACKUP_TABLES, INTERNAL_TABLES } from "./src/lib/backups/export";
 		`,
 		resolveDir: root,
 		loader: "ts",
@@ -33,7 +28,7 @@ await build({
 	alias: { "@": join(root, "src") },
 });
 
-const { BACKUP_TABLE_GROUPS, BACKUP_TABLES } = await import(pathToFileURL(join(outDir, "backups.mjs")).href);
+const { BACKUP_TABLE_GROUPS, BACKUP_TABLES, INTERNAL_TABLES } = await import(pathToFileURL(join(outDir, "backups.mjs")).href);
 
 const migrationsDirectory = join(root, "drizzle", "migrations");
 const migrationFiles = readdirSync(migrationsDirectory)
@@ -77,10 +72,11 @@ test("tables listed as internal are actually created by a migration", () => {
 			created.add(match[1]);
 		}
 	}
-	// d1_migrations is created by the Worker's own runner (MIGRATION_TABLE_SQL in
-	// src/lib/migrations/service.ts) rather than a migration file, so it has no
-	// CREATE TABLE to find.
-	const fromMigrations = INTERNAL_TABLES.filter((table) => table !== "d1_migrations");
+	// The migration ledgers are created by the runners themselves (MIGRATION_TABLE_SQL
+	// in src/lib/migrations/service.ts and its PostgreSQL/MySQL counterparts) rather
+	// than by a migration file, so they have no CREATE TABLE to find.
+	const runnerCreated = new Set(["d1_migrations", "mailflare_migrations"]);
+	const fromMigrations = INTERNAL_TABLES.filter((table) => !runnerCreated.has(table));
 	for (const table of fromMigrations) {
 		assert.ok(created.has(table), `${table} is listed as internal but no migration creates it; remove it from INTERNAL_TABLES`);
 	}

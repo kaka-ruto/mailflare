@@ -1,7 +1,7 @@
 import type { TranslationKey } from "@/lib/i18n/types";
 import type { BulkMessageAction } from "@/app/api/messages/bulk/types";
 import type { Message, MessageDirection } from "@/hooks/types";
-import type { LucideIcon } from "lucide-react";
+import { IconNode } from "@/components/icons";
 
 export type MessageActionsProps = {
 	messageId: string;
@@ -43,7 +43,7 @@ export type ReplyMode = "reply" | "replyAll";
 
 export type ReplyableMessage = Pick<
 	Message,
-	"direction" | "fromAddr" | "toAddr" | "ccAddr" | "providerMessageId" | "references" | "threadId"
+	"direction" | "fromAddr" | "toAddr" | "ccAddr" | "replyTo" | "providerMessageId" | "references" | "threadId"
 >;
 
 export type ReplyRecipients = {
@@ -80,5 +80,5 @@ export type BlockMessageContactInput = {
 export type MoveMessageActionItem = {
 	action: BulkMessageAction;
 	labelKey: TranslationKey;
-	icon: LucideIcon;
+	icon: IconNode;
 };

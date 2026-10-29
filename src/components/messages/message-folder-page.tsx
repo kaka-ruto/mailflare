@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
-import { Archive, ChevronLeft, ChevronRight, ListFilter, Mail, MailOpen, Trash2 } from "lucide-react";
+import { Archive, ChevronLeft, ChevronRight, ListFilter, Mail, MailOpen, Trash2 } from "@/components/icons";
 import { useLanguage } from "@/components/language-provider";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -25,6 +25,7 @@ import { dispatchMessageCountsDelta, toggleMessageStar } from "./message-list-ro
 import { MessageNavigationProgress, useMessageNavigation } from "./message-navigation";
 import { rememberOpenedUnreadMessage } from "./message-detail-navigation-utils";
 import { useConversationView } from "./use-conversation-view";
+import { OpenedIndicator } from "./message-open-status";
 import type { MessageFolderPageProps, MessageListRowProps, RowMessageAction } from "./types";
 import {
 	formatMessageListTimestamp,
@@ -32,6 +33,7 @@ import {
 	getMessageParty,
 	getMessagePartyClassName,
 	getMessagePreview,
+	getUnreadFlipCount,
 	isMessageListRowUnread,
 	formatEmailPageTitle,
 	getMailboxAddress,
@@ -43,9 +45,11 @@ import {
 	getEmptyFolderLabel,
 	getPermanentDeleteFolderLabel,
 	getPermanentDeleteConfirmText,
+	PartialDeleteError,
 	supportsPermanentDelete,
 } from "@/lib/messages/permanent-delete-utils";
 import clsx from "clsx";
+import { DueFollowUps } from "@/components/follow-ups/due-follow-ups";
 
 const pageSize = 25;
 
@@ -76,10 +80,14 @@ function MessageListRow({
 	const href = `${config.hrefPrefix}/${message.id}`;
 	const navigation = useMessageNavigation(href, rowMessage);
 
+	const affectsInboxCount = config.folder === "inbox" && !config.folderId;
+
 	async function runRowAction(action: RowMessageAction) {
 		const previousRead = read;
 		const previousThreadUnread = threadUnread;
-		const unreadDelta = action === "read" ? -1 : action === "unread" ? 1 : 0;
+		const unreadDelta = !affectsInboxCount || (action !== "read" && action !== "unread")
+			? 0
+			: getUnreadFlipCount(rowMessage, action === "read") * (action === "read" ? -1 : 1);
 		if (action === "read") setRead(true);
 		if (action === "unread") setRead(false);
 		// Grouped rows derive their unread styling from the thread count, so it must change with the row.
@@ -108,11 +116,11 @@ function MessageListRow({
 			const previousThreadUnread = threadUnread;
 			setRead(true);
 			if (previousThreadUnread !== undefined) setThreadUnread(Math.max(0, previousThreadUnread - 1));
-			if (message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: -1 });
+			if (affectsInboxCount && message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: -1 });
 			void runBulkMessageAction([message.id], "read", false).catch(() => {
 				setRead(false);
 				setThreadUnread(previousThreadUnread);
-				if (message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: 1 });
+				if (affectsInboxCount && message.direction === "inbound") dispatchMessageCountsDelta({ inboxUnreadDelta: 1 });
 			});
 		}
 		navigation.onNavigate(event, !read);
@@ -121,6 +129,7 @@ function MessageListRow({
 	if (compact) {
 		const compactRow = (
 			<div
+				role={swipeable ? undefined : "listitem"}
 				className={`group grid grid-cols-[20px_minmax(0,1fr)] gap-3 border-l-2 px-4 py-3 transition-colors ${active
 					? "border-l-blue-600 bg-blue-50"
 					: selected
@@ -140,16 +149,18 @@ function MessageListRow({
 					className="mt-1 h-4 w-4 rounded border-neutral-300"
 					aria-label={t("list.selectFrom", { sender: party })}
 				/>
-				<Link href={href} onClick={config.folder === "drafts" ? undefined : onMessageNavigate} className="min-w-0">
+				<Link href={href} onClick={config.folder === "drafts" ? undefined : onMessageNavigate} aria-current={active ? "true" : undefined} className="min-w-0">
 					<span className="flex items-baseline justify-between gap-3">
 						<span className={clsx(unread && "font-semibold",getMessagePartyClassName(rowMessage, config.folder))}>
+							{unread && <span className="sr-only">{t("list.unread")} </span>}
 							{party}
 
 							{(message.threadCount ?? 1) > 1 && (
 								<span className="ml-2 text-xs font-normal text-neutral-500">{message.threadCount}</span>
 							)}
 						</span>
-						<span className={clsx(unread ?"font-medium":"text-neutral-400","shrink-0 text-[11px]")}>
+						<span className={clsx(unread ?"font-medium":"text-neutral-500","shrink-0 text-[11px]")}>
+							<OpenedIndicator count={message.openCount} />
 							{message.scheduledAt ? formatScheduledSendTime(message.scheduledAt, t) : formatMessageListTimestamp(message.createdAt)}
 						</span>
 					</span>
@@ -168,6 +179,7 @@ function MessageListRow({
 		if (!swipeable) return compactRow;
 		return (
 			<SwipeableRow
+				role="listitem"
 				startAction={{
 					label: read ? t("list.markUnread") : t("list.markRead"),
 					icon: read ? Mail : MailOpen,
@@ -187,7 +199,7 @@ function MessageListRow({
 	}
 
 	const className =
-		`group relative grid min-h-12 w-full grid-cols-[24px_32px_minmax(160px,80px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm ${active || selected ? "bg-blue-50" : ""
+		`group relative grid min-h-12 w-full grid-cols-[24px_32px_minmax(160px,80px)_1fr_auto] items-center gap-3 px-6 text-left text-sm hover:z-10 hover:bg-[#f2f6fc] hover:shadow-sm has-[a:focus-visible]:ring-2 has-[a:focus-visible]:ring-inset has-[a:focus-visible]:ring-blue-600 ${active || selected ? "bg-blue-50" : ""
 		} ${draggable ? "cursor-grab active:cursor-grabbing" : ""}`;
 	const content = (
 		<>
@@ -197,12 +209,12 @@ function MessageListRow({
 						type="button"
 						variant="ghost"
 						size="sm"
-						onClick={(event) => {
-							event.preventDefault();
-							event.stopPropagation();
+						className="relative z-10"
+						onClick={() => {
 							void toggleMessageStar(message.id).then((result) => setStarred(result.starred));
 						}}
-						aria-label={starred ? t("list.starred") : t("list.notStarred")}
+						aria-label={t("message.star")}
+						aria-pressed={starred}
 					>
 						<Icon className={`h-4 w-4 ${starred ? "fill-amber-400 text-amber-400" : "text-neutral-300"}`} />
 					</Button>
@@ -212,6 +224,7 @@ function MessageListRow({
 				<Icon className="h-4 w-4 text-neutral-300" />
 			)}
 			<span className={clsx(unread && "font-semibold", getMessagePartyClassName(rowMessage, config.folder))}>
+				{unread && <span className="sr-only">{t("list.unread")} </span>}
 				{party}
 
 				{(message.threadCount ?? 1) > 1 && (
@@ -219,16 +232,24 @@ function MessageListRow({
 				)}
 			</span>
 			<span className="truncate text-neutral-700">
-				<span className={unread ? "font-semibold text-neutral-900" : ""}>
-					{rowMessage.subject ?? t("list.noSubject")}
-				</span>
-				<span className="text-neutral-500"> - {getMessagePreview(rowMessage, config.folder, t)}</span>
+				<Link
+					href={href}
+					onClick={config.folder === "drafts" ? undefined : onMessageNavigate}
+					aria-current={active ? "true" : undefined}
+					className="focus-visible:outline-none after:absolute after:inset-0"
+				>
+					<span className={unread ? "font-semibold text-neutral-900" : ""}>
+						{rowMessage.subject ?? t("list.noSubject")}
+					</span>
+					<span className="text-neutral-500"> - {getMessagePreview(rowMessage, config.folder, t)}</span>
+				</Link>
 			</span>
 			<time
 				dateTime={message.createdAt}
 				className={`min-w-[96px] whitespace-nowrap text-right text-xs group-hover:opacity-0 ${unread ? "font-semibold text-neutral-800" : "text-neutral-500"
 					}`}
 			>
+				<OpenedIndicator count={message.openCount} />
 				{message.scheduledAt ? formatScheduledSendTime(message.scheduledAt, t) : formatMessageListTimestamp(message.createdAt)}
 			</time>
 		</>
@@ -236,22 +257,21 @@ function MessageListRow({
 
 	if (config.folder === "drafts") {
 		return (
-			<div className={className}>
+			<div role="listitem" className={className}>
 				<Checkbox
 					checked={selected}
 					onChange={(event) => onSelectedChange(message.id, event.target.checked)}
-					className="h-4 w-4 rounded border-neutral-300"
+					className="relative z-10 h-4 w-4 rounded border-neutral-300"
 					aria-label={t("list.selectMessage")}
 				/>
-				<Link href={href} className="contents text-left">
-					{content}
-				</Link>
+				{content}
 			</div>
 		);
 	}
 
 	return (
 		<div
+			role="listitem"
 			className={className}
 			draggable={draggable}
 			onDragStart={(event) => {
@@ -263,12 +283,10 @@ function MessageListRow({
 			<Checkbox
 				checked={selected}
 				onChange={(event) => onSelectedChange(message.id, event.target.checked)}
-				className="h-4 w-4 rounded border-neutral-300"
-				aria-label={t("list.selectMessage")}
+				className="relative z-10 h-4 w-4 rounded border-neutral-300"
+				aria-label={t("list.selectFrom", { sender: party })}
 			/>
-			<Link href={href} onClick={onMessageNavigate} className="contents">
-				{content}
-			</Link>
+			{content}
 			{(config.folder === "inbox" || config.folder === "snoozed") && message.direction === "inbound" && (
 				<MessageListRowActions
 					message={rowMessage}
@@ -296,6 +314,7 @@ export function MessageFolderPage({
 	>([]);
 	const [pendingBulkAction, setPendingBulkAction] = useState(false);
 	const [emptyingFolder, setEmptyingFolder] = useState(false);
+	const [actionError, setActionError] = useState<string | null>(null);
 	const [unreadOnly, setUnreadOnly] = useState(false);
 	const [conversationView] = useConversationView();
 	const grouped = conversationView && config.folder !== "drafts";
@@ -343,6 +362,13 @@ export function MessageFolderPage({
 	}, [offset]);
 
 	useEffect(() => {
+		const originalTitle = document.title;
+		return () => {
+			document.title = originalTitle;
+		};
+	}, []);
+
+	useEffect(() => {
 		if (mailboxesLoading) return;
 		document.title = formatEmailPageTitle({
 			location: title,
@@ -352,6 +378,19 @@ export function MessageFolderPage({
 			emailAddress: mailboxAddress,
 		});
 	}, [title, config.folder, config.folderId, mailboxAddress, mailboxesLoading, titleTotal, titleUnread]);
+
+	useEffect(() => {
+		if (isLoading) return;
+		setSelectedMessages((current) => {
+			const remaining = current.filter((item) => messages.some((message) => message.id === item.id));
+			return remaining.length === current.length ? current : remaining;
+		});
+	}, [messages, isLoading]);
+
+	useEffect(() => {
+		if (isLoading || offset === 0 || messages.length > 0) return;
+		setOffset(total > 0 ? Math.floor((total - 1) / limit) * limit : 0);
+	}, [isLoading, offset, messages.length, total, limit]);
 
 	function updateSelectedMessage(messageId: string, selected: boolean) {
 		const message = messages.find((item) => item.id === messageId);
@@ -395,6 +434,21 @@ export function MessageFolderPage({
 		}
 	}
 
+	useEffect(() => {
+		if (!actionError) return;
+		const timer = setTimeout(() => setActionError(null), 6000);
+		return () => clearTimeout(timer);
+	}, [actionError]);
+
+	async function runSelectedActionReportingErrors(action: BulkMessageAction, folderId?: string) {
+		setActionError(null);
+		try {
+			await runSelectedAction(action, folderId);
+		} catch (error) {
+			setActionError(error instanceof PartialDeleteError ? t("actions.error.deleteSkipped") : t("actions.error.update"));
+		}
+	}
+
 	async function runSelectedAction(action: BulkMessageAction, folderId?: string) {
 		if (selectedIds.length === 0) return;
 		if (action === "delete") {
@@ -405,17 +459,18 @@ export function MessageFolderPage({
 		setPendingBulkAction(true);
 		const previousMessages = messages;
 		const readValue = action === "read" ? true : action === "unread" ? false : null;
-		const changedMessages = readValue === null
-			? []
-			: messages.filter((message) => selectedIds.includes(message.id) && message.read !== readValue);
+		const inboxUnreadDelta = readValue === null || config.folder !== "inbox" || config.folderId
+			? 0
+			: messages
+				.filter((message) => selectedIds.includes(message.id))
+				.reduce((total, message) => total + getUnreadFlipCount(message, readValue), 0) * (readValue ? -1 : 1);
 		if (readValue !== null) {
 			updateMessages((current) => current.map((message) =>
-				selectedIds.includes(message.id) ? { ...message, read: readValue } : message,
+				selectedIds.includes(message.id)
+					? { ...message, read: readValue, ...(message.threadMessageIds ? { threadUnread: readValue ? 0 : message.threadMessageIds.length } : {}) }
+					: message,
 			));
 			setSelectedMessages((current) => current.map((message) => ({ ...message, read: readValue })));
-			const inboxUnreadDelta = changedMessages
-				.filter((message) => message.direction === "inbound")
-				.reduce((total, message) => total + (readValue ? (message.read ? 0 : -1) : (message.read ? 1 : 0)), 0);
 			if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
 		}
 		try {
@@ -424,10 +479,7 @@ export function MessageFolderPage({
 		} catch (error) {
 			if (readValue !== null) {
 				updateMessages(previousMessages);
-				const inboxUnreadDelta = changedMessages
-					.filter((message) => message.direction === "inbound")
-					.reduce((total, message) => total + (readValue ? (message.read ? 0 : 1) : (message.read ? -1 : 0)), 0);
-				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta });
+				if (inboxUnreadDelta) dispatchMessageCountsDelta({ inboxUnreadDelta: -inboxUnreadDelta });
 			}
 			throw error;
 		} finally {
@@ -438,6 +490,7 @@ export function MessageFolderPage({
 	return (
 		<div className="flex h-full min-h-0 flex-col">
 			<div className={`flex h-14 shrink-0 items-center justify-between border-b border-neutral-200 ${compact ? "px-4" : "px-4.5 md:px-6"}`}>
+				{selectedMessageId ? <h2 className="sr-only">{title}</h2> : <h1 className="sr-only">{title}</h1>}
 				<div className="flex items-center gap-3 w-full">
 					<Tooltip label={t("list.selectAll")}>
 						<Checkbox
@@ -452,14 +505,14 @@ export function MessageFolderPage({
 						<BulkMessageToolbar
 							selectedCount={selectedIds.length}
 							hasUnreadSelection={hasUnreadSelection}
-							onAction={runSelectedAction}
+							onAction={runSelectedActionReportingErrors}
 							onClearSelection={() => setSelectedMessages([])}
 							pending={pendingBulkAction}
 							folder={config.folderId ? undefined : config.folder}
 						/>
 					) : (
 						(compact || isMobile) && (
-							<h1 className="truncate font-semibold text-neutral-900 pl-1">{title}</h1>
+							<p aria-hidden="true" className="truncate font-semibold text-neutral-900 pl-1">{title}</p>
 						)
 					)}
 				</div>
@@ -528,23 +581,36 @@ export function MessageFolderPage({
 				)}
 			</div>
 
-			<div className="min-h-0 flex-1 divide-y divide-neutral-100 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
-				{messages.map((message) => (
-					<MessageListRow
-						key={message.id}
-						message={message}
-						config={config}
-						selected={selectedIds.includes(message.id)}
-						active={message.id === selectedMessageId}
-						compact={compact || isMobile}
-						currentAccountName={currentAccountName}
-						onSelectedChange={updateSelectedMessage}
-						onMessageAction={(messageId, action) =>
-							runBulkMessageAction(expandSelectedIds([messageId]), action, action !== "read" && action !== "unread")
-						}
-						dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
-					/>
-				))}
+			{actionError && (
+				<p role="alert" className="shrink-0 border-b border-red-100 bg-red-50 px-6 py-2 text-sm font-medium text-red-700">
+					{actionError}
+				</p>
+			)}
+
+			<div className="min-h-0 flex-1 overflow-y-auto overscroll-contain scrollbar-gutter-stable">
+				{config.folder === "inbox" && !config.folderId && offset === 0 && !mailboxesLoading && <DueFollowUps mailboxId={selectedMailbox?.id} />}
+				<div role="list" aria-label={title} className="divide-y divide-neutral-100">
+					{messages.map((message) => (
+						<MessageListRow
+							key={message.id}
+							message={message}
+							config={config}
+							selected={selectedIds.includes(message.id)}
+							active={message.id === selectedMessageId}
+							compact={compact || isMobile}
+							currentAccountName={currentAccountName}
+							onSelectedChange={updateSelectedMessage}
+							onMessageAction={(messageId, action) => {
+								setActionError(null);
+								return runBulkMessageAction(expandSelectedIds([messageId]), action, action !== "read" && action !== "unread").catch((error) => {
+									setActionError(error instanceof PartialDeleteError ? t("actions.error.deleteSkipped") : t("actions.error.update"));
+									throw error;
+								});
+							}}
+							dragMessageIds={expandSelectedIds(selectedIds.includes(message.id) ? selectedIds : [message.id])}
+						/>
+					))}
+				</div>
 				{!isLoading && messages.length === 0 && (
 					<p className="px-6 py-4 text-sm text-neutral-500">
 						{hasActiveFilters ? t("list.noMatch") : config.emptyTextKey ? t(config.emptyTextKey) : config.emptyText}

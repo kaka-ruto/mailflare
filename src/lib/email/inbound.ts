@@ -1,6 +1,6 @@
 import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "@/db";
-import { messages, outboundJobs, users } from "@/db/schema";
+import { domains, mailboxAliases, mailboxes, messages, outboundJobs, users } from "@/db/schema";
 import { newId } from "@/lib/ids";
 import { buildSnippet, parseRawMime } from "@/lib/email/parse";
 import { resolveInboundAddress, resolveInboxRuleDestination } from "@/lib/email/routing";
@@ -17,6 +17,9 @@ import { resolveThreadId } from "@/lib/email/threading";
 import { normalizeMessageId } from "@/lib/email/thread-lookup";
 import type { SessionUser } from "@/lib/auth/types";
 import { analyzeSpam } from "@/lib/spam/engine";
+import { ExternalSpamIntelligenceProvider } from "@/lib/spam/providers/external";
+import { getSpamIntelligenceConfig } from "@/lib/spam/settings";
+import type { ProviderVerdicts } from "@/lib/spam/types";
 import { getReputationKeys } from "@/lib/spam/analyzers/reputation";
 import { recordReputationObservation } from "@/lib/spam/repository";
 import {
@@ -30,7 +33,28 @@ export type InboundQueueMessage = {
 	to: string;
 	rawR2Key: string;
 	headers?: Record<string, string>;
+	verdicts?: ProviderVerdicts;
+	senderIp?: string;
 };
+
+/** True when the address is a mailbox or alias owned by the user, so their own mail never counts as unread. */
+async function isOwnAddress(db: ReturnType<typeof getDb>, userId: string, address: string) {
+	const at = address.lastIndexOf("@");
+	if (at < 1) return false;
+	const localPart = address.slice(0, at).toLowerCase();
+	const hostname = address.slice(at + 1).toLowerCase();
+	const [mailbox] = await db.select({ id: mailboxes.id }).from(mailboxes)
+		.innerJoin(domains, eq(mailboxes.domainId, domains.id))
+		.where(and(eq(mailboxes.userId, userId), eq(mailboxes.localPart, localPart), eq(domains.hostname, hostname)))
+		.limit(1);
+	if (mailbox) return true;
+	const [alias] = await db.select({ id: mailboxAliases.id }).from(mailboxAliases)
+		.innerJoin(mailboxes, eq(mailboxAliases.mailboxId, mailboxes.id))
+		.innerJoin(domains, eq(mailboxAliases.domainId, domains.id))
+		.where(and(eq(mailboxes.userId, userId), eq(mailboxAliases.localPart, localPart), eq(domains.hostname, hostname)))
+		.limit(1);
+	return Boolean(alias);
+}
 
 export async function processInboundMessage(
 	env: CloudflareEnv,
@@ -104,12 +128,17 @@ export async function processInboundMessage(
 	const [owner] = await db.select({ enabled: users.spamProtectionEnabled }).from(users).where(eq(users.id, decision.mailbox.userId)).limit(1);
 	if (owner?.enabled !== false) {
 		try {
+			const intelligence = await getSpamIntelligenceConfig(env);
 			spamAnalysis = await analyzeSpam(db, {
 				mailboxId: decision.mailbox.mailboxId,
 				userId: decision.mailbox.userId,
 				envelopeFrom: payload.from,
 				headers: payload.headers,
+				verdicts: payload.verdicts,
+				senderIp: payload.senderIp,
+				brands: intelligence.brands,
 				message: parsed,
+				intelligenceProvider: new ExternalSpamIntelligenceProvider(intelligence, env.BUCKET),
 			});
 		} catch (error) {
 			spamAnalysisError = error instanceof Error ? error.message.slice(0, 300) : "Spam analysis failed";
@@ -133,6 +162,7 @@ export async function processInboundMessage(
 		address: fromAddr,
 		source: "inbound",
 	});
+	const sentByOwner = await isOwnAddress(db, decision.mailbox.userId, getEmailAddress(fromAddr) || fromAddr).catch(() => false);
 	let threadId: string;
 	try {
 		threadId = await resolveThreadId(db, {
@@ -162,12 +192,14 @@ export async function processInboundMessage(
 			fromAddr,
 			toAddr,
 			ccAddr: parsed.ccAddr,
+			replyTo: parsed.replyTo,
 			subject: parsed.subject,
 			snippet,
 			textBody: parsed.text,
 			htmlBody: parsed.html,
 			rawR2Key: payload.rawR2Key,
 			status,
+			read: sentByOwner,
 			threadId,
 			inReplyTo: parsed.inReplyTo,
 			references: parsed.references.length ? parsed.references.join(" ") : null,
@@ -213,7 +245,9 @@ export async function processInboundMessage(
 		}
 	}
 
-	if (status !== "spam") {
+	if (status === "spam") {
+		console.info(`No notification for ${messageId}: filed as spam`);
+	} else {
 		const notificationUserIds = await getMailboxNotificationUserIds(
 			env,
 			decision.mailbox.mailboxId,
