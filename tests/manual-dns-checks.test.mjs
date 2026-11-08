@@ -64,8 +64,10 @@ function answerDns(answers) {
 		const parsed = new URL(url);
 		const name = parsed.searchParams.get("name");
 		asked.push(name);
-		const data = answers[`${name}|${parsed.searchParams.get("type")}`];
-		return Response.json(data === undefined ? { Status: 3 } : { Status: 0, Answer: data.map((value) => ({ name, type: 0, TTL: 60, data: value })) });
+		const qtype = parsed.searchParams.get("type");
+		const typeNumber = { A: 1, AAAA: 28, CNAME: 5, MX: 15, TXT: 16 }[qtype] ?? 0;
+		const data = answers[`${name}|${qtype}`];
+		return Response.json(data === undefined ? { Status: 3 } : { Status: 0, Answer: data.map((value) => ({ name, type: typeNumber, TTL: 60, data: value })) });
 	};
 	return asked;
 }
