@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
-import test, { after } from "node:test";
+import test from "node:test";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
@@ -51,8 +51,7 @@ test("every route group layout that renders a NavItem sidebar mounts MailSearchP
 });
 
 const tempDirectory = mkdtempSync(join(root, "node_modules", "mailflare-mail-search-test-"));
-after(() => rmSync(tempDirectory, { recursive: true, force: true }));
-
+process.on("exit", () => { try { rmSync(tempDirectory, { recursive: true, force: true }); } catch {} });
 await build({
 	stdin: {
 		contents: `
